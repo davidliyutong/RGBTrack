@@ -327,7 +327,9 @@ def render_cad_mask(pose, mesh_model, K, w=640, h=480):
     """
     # Load the vertices from the mesh model
     vertices = np.array(mesh_model.vertices)
-    sample_indices = np.random.choice(len(vertices), size=500, replace=False)
+    # sample_indices = np.random.choice(len(vertices), size=500, replace=False)
+    sample_indices = np.random.choice(len(vertices), size=min(500, len(vertices)), replace=False)
+    print(f"sample_indices_len: {len(sample_indices)}")
     vertices = vertices[sample_indices]
 
     # Transform vertices with the object pose
@@ -789,7 +791,7 @@ def binary_search_depth(est,mesh, rgb, mask, K, depth_min=0.5, depth_max=2,w=640
             # #rgbtobgr
             # rgb_save= rgb_save[...,::-1]
             # cv2.imwrite(f"tmp/debug_{mid}.png", rgb_save)
-            plt.savefig(f"tmp/debug_{mid}.png")
+            plt.savefig(f"RGBTrack/tmp/debug_{mid}.png")
             plt.close()  # Close the figure to free resources
         if abs(high-low)<0.001:
             break
@@ -843,7 +845,7 @@ def binary_search_scale(est,mesh, rgb,depth, mask, K, scale_min=0.2, scale_max=5
             rgb_copy= rgb.copy()
             rgb_copy[mask==0]=0
             plt.imshow(rgb_copy)
-            plt.savefig(f"tmp/debug_{mid}.png")
+            plt.savefig(f"RGBTrack/tmp/debug_{mid}.png")
         if abs(high-low)<0.01:
             break
         if  abs(area-np.sum(mask))<20:

@@ -826,6 +826,94 @@ class ClosePoseReader(YcbineoatReader):
         return super().get_gt_mesh()
 
 
+class VideoFileReader:
+    def __init__(self, video_file, K_file=None, K=None, downscale=1, shorter_side=None, zfar=np.inf, mask_provider=None):
+        self.video_file = video_file
+        self.downscale = downscale
+        self.zfar = zfar
+        self.mask_provider = mask_provider  # callable: (i, H, W) -> np.ndarray mask uint8/bool
+
+        cap = cv2.VideoCapture(self.video_file)
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video file: {self.video_file}")
+
+        self.frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        ok, frame0 = cap.read()
+        if not ok:
+            cap.release()
+            raise ValueError(f"Cannot read first frame from: {self.video_file}")
+        h0, w0 = frame0.shape[:2]
+
+        if shorter_side is not None:
+            self.downscale = shorter_side / min(h0, w0)
+
+        self.H = int(h0 * self.downscale)
+        self.W = int(w0 * self.downscale)
+
+        if K is not None:
+            self.K = K.astype(float).copy()
+        else:
+            if K_file is None:
+                maybe = os.path.join(os.path.dirname(self.video_file), "cam_K.txt")
+                K_file = maybe if os.path.isfile(maybe) else None
+            if K_file is not None and os.path.isfile(K_file):
+                self.K = np.loadtxt(K_file).reshape(3, 3).astype(float)
+            else:
+                fx = fy = max(self.W, self.H)
+                cx = self.W / 2.0
+                cy = self.H / 2.0
+                self.K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=float)
+                logging.info("cam_K not provided; using heuristic intrinsics")
+
+        self.K[:2] *= self.downscale
+
+        self.id_strs = [f"{i:06d}" for i in range(self.frame_count)]
+        self._cap = cap
+
+    def __len__(self):
+        return self.frame_count
+
+    def get_video_name(self):
+        return os.path.basename(self.video_file)
+
+    def _read_frame(self, i):
+        if i < 0 or i >= self.frame_count:
+            raise IndexError("frame index out of range")
+        self._cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+        ok, frame = self._cap.read()
+        if not ok or frame is None:
+            raise ValueError(f"Failed to read frame {i}")
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if (frame.shape[1], frame.shape[0]) != (self.W, self.H):
+            frame = cv2.resize(frame, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+        return frame
+
+    def get_color(self, i):
+        return self._read_frame(i)
+
+    def get_mask(self, i):
+        if self.mask_provider is not None:
+            mask = self.mask_provider(i, self.H, self.W)
+            if mask.dtype != np.uint8:
+                mask = mask.astype(np.uint8)
+            return mask
+        return np.zeros((self.H, self.W), dtype=np.uint8)
+
+    def get_depth(self, i):
+        return np.zeros((self.H, self.W), dtype=np.float32)
+
+    def get_xyz_map(self, i):
+        depth = self.get_depth(i)
+        return depth2xyzmap(depth, self.K)
+
+    def release(self):
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
+
 if __name__ == "__main__":
     reader = ClosePoseReader(
         "/mnt/ssd_990/teng/ycb/FoundationPose/demo_data/closepose/set8/scene5/",

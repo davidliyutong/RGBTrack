@@ -9,3 +9,4 @@ pip install tensorrt
 pip install pycuda
 
 # python run_demo_clearpose.py
+python test_demo_without_depth.py
