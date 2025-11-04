@@ -1,0 +1,23 @@
+# Data files
+*.npz
+
+# Python caches (as requested and common)
+__pcache__/
+__pycache__/
+
+# Project directories (root)
+/bundlesdf/
+/debug/
+/Camera/
+/demo_data/
+/weights/
+*.txt
+
+/bop_toolkit/
+/demo/
+/mycpp/
+*.mp4
+*.png
+
+/segment-anything-2-real-time/
+
