@@ -29,7 +29,7 @@ class WebUI:
         on_config_update: Callable[[CameraConfig], None],
         on_camera_reset: Callable[[], str] = lambda: "Camera reset not implemented",
         on_save_config: Callable[[], None] = lambda: None,
-        on_wb_calibrate: Callable[[], str] = lambda: "White balance calibration not implemented",
+        on_wb_calibrate: Callable[[], tuple[str, float, float, float]] = lambda: ("White balance calibration not implemented", 1.0, 1.0, 1.0),
         config_path: Optional[Path] = None,
         host: str = "0.0.0.0",
         port: int = 7860
@@ -369,12 +369,16 @@ class WebUI:
             def calibrate_wb():
                 """Perform white balance calibration"""
                 try:
-                    result = self.on_wb_calibrate()
-                    # TODO: modify the rgb gains on the web ui, also trigger a config update
-                    return result
+                    result, red, green, blue = self.on_wb_calibrate()
+                    # Update the internal config with calibrated values
+                    self.config.red_balance = red
+                    self.config.green_balance = green
+                    self.config.blue_balance = blue
+                    # Return the result message and updated RGB values for UI sliders
+                    return result, red, green, blue
                 except Exception as e:
                     logger.error(f"WB calibration failed: {e}")
-                    return f"✗ Error: {str(e)}"
+                    return f"✗ Error: {str(e)}", 1.0, 1.0, 1.0
 
             # Connect events
             apply_btn.click(
@@ -428,7 +432,7 @@ class WebUI:
 
             wb_calibrate_btn.click(
                 fn=calibrate_wb,
-                outputs=config_status
+                outputs=[config_status, red_slider, green_slider, blue_slider]
             )
 
         self.app = app

@@ -369,28 +369,50 @@ class RGBTrackApplication:
             logger.error(f"Camera reset error: {e}")
             return f"✗ Error: {str(e)}"
 
-    def _handle_wb_calibrate(self) -> str:
-        """Handle white balance calibration request from UI"""
+    def _handle_wb_calibrate(self) -> tuple[str, float, float, float]:
+        """Handle white balance calibration request from UI
+        
+        Returns:
+            Tuple of (status_message, red_balance, green_balance, blue_balance)
+        """
         try:
             logger.info("Starting white balance calibration...")
 
             if self.camera is None or not self.camera.is_open():
                 logger.error("Camera not available for white balance calibration")
-                return "✗ Camera not available"
+                return ("✗ Camera not available", 1.0, 1.0, 1.0)
 
-            # Capture frame for calibration
-            self.camera.calibrate_white_balance()  # pyright: ignore[reportOptionalMemberAccess]
-            frame = self.camera.capture_frame()
+            # Perform calibration
+            success = self.camera.calibrate_white_balance()  # pyright: ignore[reportOptionalMemberAccess]
+            
+            if not success:
+                logger.error("White balance calibration failed")
+                return ("✗ White balance calibration failed", 1.0, 1.0, 1.0)
 
-            if frame is None:
-                logger.error("Failed to capture frame for white balance calibration")
-                return "✗ Failed to capture frame"
+            # Get the calibrated RGB values from camera config
+            red_balance = self.camera.config.red_balance
+            green_balance = self.camera.config.green_balance
+            blue_balance = self.camera.config.blue_balance
 
-            return "✓ White balance calibration successful"
+            # Update system config
+            self.config.camera.red_balance = red_balance
+            self.config.camera.green_balance = green_balance
+            self.config.camera.blue_balance = blue_balance
+            
+            # Save configuration to disk
+            self._handle_save_config()
+
+            logger.info(f"White balance calibrated: R:{red_balance:.3f}, G:{green_balance:.3f}, B:{blue_balance:.3f}")
+            return (
+                f"✓ White balance calibrated: R={red_balance:.3f}, G={green_balance:.3f}, B={blue_balance:.3f}",
+                red_balance,
+                green_balance,
+                blue_balance
+            )
 
         except Exception as e:
             logger.error(f"White balance calibration error: {e}")
-            return f"✗ Error: {str(e)}"
+            return (f"✗ Error: {str(e)}", 1.0, 1.0, 1.0)
 
 def main():
     """Main entry point"""
