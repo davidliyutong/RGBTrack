@@ -380,14 +380,26 @@ class RGBTrackApplication:
 
             if self.camera is None or not self.camera.is_open():
                 logger.error("Camera not available for white balance calibration")
-                return ("✗ Camera not available", 1.0, 1.0, 1.0)
+                # Return current config values instead of defaults on error
+                return (
+                    "✗ Camera not available",
+                    self.config.camera.red_balance,
+                    self.config.camera.green_balance,
+                    self.config.camera.blue_balance
+                )
 
             # Perform calibration (updates camera.config RGB balance values)
             success = self.camera.calibrate_white_balance()  # pyright: ignore[reportOptionalMemberAccess]
             
             if not success:
                 logger.error("White balance calibration failed")
-                return ("✗ Calibration failed", 1.0, 1.0, 1.0)
+                # Return current config values instead of defaults on error
+                return (
+                    "✗ Calibration failed",
+                    self.config.camera.red_balance,
+                    self.config.camera.green_balance,
+                    self.config.camera.blue_balance
+                )
 
             # Get the updated RGB balance values from camera config
             red = self.camera.config.red_balance
@@ -407,7 +419,13 @@ class RGBTrackApplication:
 
         except Exception as e:
             logger.error(f"White balance calibration error: {e}")
-            return (f"✗ Error: {str(e)}", 1.0, 1.0, 1.0)
+            # Return current config values instead of defaults on error
+            return (
+                f"✗ Error: {str(e)}",
+                self.config.camera.red_balance,
+                self.config.camera.green_balance,
+                self.config.camera.blue_balance
+            )
 
 def main():
     """Main entry point"""
