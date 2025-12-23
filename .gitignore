@@ -1,0 +1,13 @@
+*.DS_Store
+.vscode
+
+*.pyc
+__pycache__/
+*.egg-info
+
+
+
+*.log
+config.yaml
+*.mvdat
+Camera

@@ -1,0 +1,45 @@
+# RGBTrack System Configuration
+# This file is automatically managed by the application
+
+camera:
+  device_sn: ''
+  exposure_time_ms: 10
+  exposure_min: 1
+  exposure_max: 100
+  gain: 1.0
+  gain_min: 0.0
+  gain_max: 10.0
+  gamma: 0.39
+  gamma_min: 0.1
+  gamma_max: 5.0
+  wb_mode: manual
+  red_balance: 1.0
+  green_balance: 1.31
+  blue_balance: 1.83
+  balance_min: 0.0
+  balance_max: 400.0
+  mode: high_speed
+  width: 1920
+  height: 1080
+  distortion_k1: 0.0
+  distortion_k2: 0.0
+  distortion_p1: 0.0
+  distortion_p2: 0.0
+  distortion_k3: 0.0
+  distortion_min: -1.0
+  distortion_max: 1.0
+  undistort: false
+detection:
+  confidence_threshold: 0.5
+  nms_threshold: 0.4
+  model_path: models/detector.pt
+  prompt: ''
+zmq:
+  transport: ipc
+  host: localhost
+  port: 5555
+  socket_path: /tmp/rgbtrack.sock
+ui_host: 0.0.0.0
+ui_port: 7860
+max_fps: 30
+frame_buffer_size: 10

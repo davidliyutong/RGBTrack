@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mvsdk"
+version = "1.0.0"
+description = "Mindvision Python SDK"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+keywords = ["mvsdk", "mindvision", "camera", "usb"]
+authors = [
+    {name = "Mindvision"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Hardware :: Hardware Drivers",
+]
+
+[project.urls]
+Homepage = "https://github.com/davidliyutong/mvsdk-python"
+
+[tool.setuptools]
+packages = ["mvsdk"]
+
+[tool.setuptools.package-data]
+mvsdk = [
+    "lib/*/*.so",
+    "lib/*/libMVSDK.so",
+]
+
+# Additional data files for system installation (USB rules)
+# These will be included in the package but not automatically installed to system paths
+# Users should use the install_driver() function from mvsdk.utils
