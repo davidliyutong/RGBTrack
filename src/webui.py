@@ -29,7 +29,7 @@ class WebUI:
         on_config_update: Callable[[CameraConfig], None],
         on_camera_reset: Callable[[], str] = lambda: "Camera reset not implemented",
         on_save_config: Callable[[], None] = lambda: None,
-        on_wb_calibrate: Callable[[], str] = lambda: "White balance calibration not implemented",
+        on_wb_calibrate: Callable[[], tuple[str, float, float, float]] = lambda: ("White balance calibration not implemented", 1.0, 1.0, 1.0),
         config_path: Optional[Path] = None,
         host: str = "0.0.0.0",
         port: int = 7860
@@ -367,14 +367,22 @@ class WebUI:
                     return f"Error: {str(e)}"
             
             def calibrate_wb():
-                """Perform white balance calibration"""
+                """Perform white balance calibration and update UI with new RGB balance values"""
                 try:
-                    result = self.on_wb_calibrate()
-                    # TODO: modify the rgb gains on the web ui, also trigger a config update
-                    return result
+                    # Call the calibration callback which returns (message, red, green, blue)
+                    status_msg, red, green, blue = self.on_wb_calibrate()
+                    
+                    # Update internal config
+                    self.config.red_balance = red
+                    self.config.green_balance = green
+                    self.config.blue_balance = blue
+                    
+                    # Return status message and updated RGB slider values
+                    return status_msg, red, green, blue
                 except Exception as e:
                     logger.error(f"WB calibration failed: {e}")
-                    return f"✗ Error: {str(e)}"
+                    # Return error message and current values
+                    return f"✗ Error: {str(e)}", self.config.red_balance, self.config.green_balance, self.config.blue_balance
 
             # Connect events
             apply_btn.click(
@@ -428,7 +436,7 @@ class WebUI:
 
             wb_calibrate_btn.click(
                 fn=calibrate_wb,
-                outputs=config_status
+                outputs=[config_status, red_slider, green_slider, blue_slider]
             )
 
         self.app = app
