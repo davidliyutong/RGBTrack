@@ -1,0 +1,6 @@
+Log file created at: 2025/12/22 22:28:27
+Running on machine: yutong-nus-ws-0
+Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg
+E1222 22:28:27.842062 119582 MVCAMAPI.cpp:352] CameraInit Failed, err:-18,Version:2.1.0.27,FriendlyName:MV-SUA202GC#0,SN:045151023001
+E1222 22:28:32.383316 119582 MVCAMAPI.cpp:352] CameraInit Failed, err:-18,Version:2.1.0.27,FriendlyName:MV-SUA202GC#0,SN:045151023001
+E1222 22:28:54.356326 119582 MVCAMAPI.cpp:352] CameraInit Failed, err:-18,Version:2.1.0.27,FriendlyName:MV-SUA202GC#0,SN:045151023001

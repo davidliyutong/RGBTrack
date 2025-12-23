@@ -1,3 +1,6 @@
 [submodule "XMem"]
 	path = XMem
 	url = https://github.com/hkchengrex/XMem.git
+[submodule "segment-anything-2-real-time"]
+	path = segment-anything-2-real-time
+	url = https://github.com/Gy920/segment-anything-2-real-time
