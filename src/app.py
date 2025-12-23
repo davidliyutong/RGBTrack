@@ -391,7 +391,8 @@ class RGBTrackApplication:
             # Perform calibration (updates camera.config RGB balance values)
             success = self.camera.calibrate_white_balance()  # pyright: ignore[reportOptionalMemberAccess]
             
-            if not success:
+            # Check if calibration was successful
+            if not success or success is None:
                 logger.error("White balance calibration failed")
                 # Return current config values instead of defaults on error
                 return (
@@ -402,6 +403,16 @@ class RGBTrackApplication:
                 )
 
             # Get the updated RGB balance values from camera config
+            # Defensive check to ensure camera.config exists
+            if not hasattr(self.camera, 'config') or self.camera.config is None:
+                logger.error("Camera config not available")
+                return (
+                    "✗ Camera config not available",
+                    self.config.camera.red_balance,
+                    self.config.camera.green_balance,
+                    self.config.camera.blue_balance
+                )
+            
             red = self.camera.config.red_balance
             green = self.camera.config.green_balance
             blue = self.camera.config.blue_balance
