@@ -157,7 +157,7 @@ camera:
 detection:
   confidence_threshold: 0.5
   nms_threshold: 0.4
-  model_path: models/detector.pt
+  mesh_path: models/detector.obj
 
 zmq:
   transport: ipc               # ipc | tcp
@@ -206,7 +206,7 @@ SystemConfig (Root)
 ├── DetectionConfig
 │   ├── confidence_threshold: float
 │   ├── nms_threshold: float
-│   └── model_path: str
+│   └── mesh_path: str
 ├── ZMQConfig
 │   ├── transport: Literal["tcp", "ipc"]
 │   ├── host: str

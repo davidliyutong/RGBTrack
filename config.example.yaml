@@ -32,8 +32,16 @@ camera:
 detection:
   confidence_threshold: 0.5
   nms_threshold: 0.4
-  model_path: models/detector.pt
+  mesh_path: models/detector.obj
   prompt: ''
+  sam2_cfg: 'configs/sam2.1/sam2.1_hiera_t.yaml'
+  sam2_checkpoint: 'checkpoints/sam2.1_hiera_tiny.pt'
+  mode: 0
+  track_refine_iter: 5
+  K:
+  - [600.0, 0.0, 320.0]
+  - [0.0, 600.0, 240.0]
+  - [0.0, 0.0, 1.0]
 zmq:
   transport: ipc
   host: localhost

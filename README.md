@@ -107,7 +107,7 @@ camera:
 
 detection:
   confidence_threshold: 0.5
-  model_path: models/detector.pt
+  mesh_path: models/detector.pt
 
 zmq:
   transport: ipc                # or tcp
@@ -202,3 +202,35 @@ See [GUIDE.md#troubleshooting](GUIDE.md#troubleshooting) for more solutions.
 ---
 
 **Need help?** Check the [Complete Guide](GUIDE.md) for detailed documentation.
+
+## Other Tasks
+
+### SAM2 Real-Time Checkpoint Model
+
+The SAM2 checkpoint model can be downloaded from the official repository. Please follow these steps:
+
+```
+cd segment-anything-2-real-time/checkpoints
+bash download_ckpts.sh
+```
+
+### RGBTrack Checkpoint Models
+
+The RGBTrack checkpoint models should be put to `weights` folder.
+
+### Build the mycpp module
+
+```shell
+cd mycpp
+mkdir build
+cd build
+cmake ..
+make -j8
+```
+
+### Build cuda plugins
+
+```
+cd bundlesdf/mycuda && rm -rf build *egg* *.so
+python -m pip install -e .
+```

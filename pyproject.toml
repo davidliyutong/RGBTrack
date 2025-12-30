@@ -71,6 +71,13 @@ dependencies = [
     "pyzmq>=25.0.0",
     "autopep8>=2.3.2",
     "mvsdk",
+    "nvdiffrast",
+    "pytorch3d",
+    "tensorrt>=10.14.1.48.post1",
+    "filterpy>=1.4.5",
+    "bop-toolkit-lib",
+    "pip>=25.3",
+    "common",
 ]
 
 
@@ -91,10 +98,15 @@ torchaudio = [
 ]
 clip = { git = "https://github.com/openai/CLIP.git" }
 mvsdk = { workspace = true }
+nvdiffrast = { git = "https://github.com/NVlabs/nvdiffrast.git" }
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d.git", rev = "stable" }
+bop-toolkit-lib = { git = "https://github.com/thodan/bop_toolkit", rev = "vbop24" }
+common = { workspace = true }
 
 [tool.uv.workspace]
 members = [
     "third_party/mvsdk-python",
+    "bundlesdf/mycuda",
 ]
 
 [tool.autopep8]
