@@ -2,9 +2,17 @@
 
 Welcome to RGBTrack - a multi-threaded Python framework for camera-based detection with real-time configuration and ZeroMQ publishing.
 
+## ✨ Features
+
+- 📷 **Camera Calibration**: Built-in ChArUco board calibration for computing camera intrinsics (K matrix) and distortion coefficients
+- 🎛️ **Real-time Configuration**: Web UI for camera settings, white balance, and calibration management
+- 🔍 **Object Detection**: Integrated detection algorithms with SAM2 support
+- 📡 **ZeroMQ Streaming**: Publish detection results via ZeroMQ for multi-process applications
+- 🧵 **Multi-threaded**: Separate threads for UI, detection, and publishing for optimal performance
+
 ## 📚 Documentation
 
-### [Complete Guide](GUIDE.md)
+### [Complete Guide](docs/GUIDE.md)
 Comprehensive documentation covering all aspects of RGBTrack:
 - Quick start and installation
 - Architecture overview
@@ -12,6 +20,13 @@ Comprehensive documentation covering all aspects of RGBTrack:
 - ZeroMQ communication
 - API reference
 - Development guide
+
+### [Camera Calibration Guide](docs/CALIBRATION_GUIDE.md) 🆕
+Step-by-step guide for camera calibration:
+- ChArUco board generation and printing
+- Image capture from multiple angles
+- Running calibration algorithm
+- Saving and using calibration results
 
 ## 🚀 Quick Start
 

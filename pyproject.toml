@@ -78,6 +78,7 @@ dependencies = [
     "bop-toolkit-lib",
     "pip>=25.3",
     "common",
+    "aprilgrid>=0.5.0",
 ]
 
 

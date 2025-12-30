@@ -247,6 +247,19 @@ wheels = [
 ]
 
 [[package]]
+name = "aprilgrid"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "opencv-python" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/76/3bfe234fb35527a15efb273dcdee49dbee7c98600d14bbbaf28980deeb2f/aprilgrid-0.5.0.tar.gz", hash = "sha256:d928c84417ffafabac6be4cf1fa223ce6d735a7e4710b3a452f136918d09169d", size = 12647, upload-time = "2025-08-14T00:20:01.921Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/e1/d3a77ef009d17c8b192a6014aa267b7c94c9bc2163eddc41fe1a71ac568d/aprilgrid-0.5.0-py3-none-any.whl", hash = "sha256:52e3aa4de23cb5c67edd1610897be095ac46d563f282a98cd2ad7f7bf75e9181", size = 12708, upload-time = "2025-08-14T00:20:00.995Z" },
+]
+
+[[package]]
 name = "argon2-cffi"
 version = "25.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4410,6 +4423,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "albumentations" },
+    { name = "aprilgrid" },
     { name = "autopep8" },
     { name = "bokeh" },
     { name = "bop-toolkit-lib" },
@@ -4490,6 +4504,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "albumentations", specifier = "==1.4.2" },
+    { name = "aprilgrid", specifier = ">=0.5.0" },
     { name = "autopep8", specifier = ">=2.3.2" },
     { name = "bokeh", specifier = "==3.4.0" },
     { name = "bop-toolkit-lib", git = "https://github.com/thodan/bop_toolkit?rev=vbop24" },

@@ -52,6 +52,36 @@ class CameraConfig(BaseModel):
     undistort: bool = False
 
 
+class CalibrationConfig(BaseModel):
+    """Camera calibration configuration"""
+    # Camera intrinsic matrix (3x3)
+    K: list[list[float]] = Field(
+        default=[
+            [600.0, 0.0, 320.0],
+            [0.0, 600.0, 240.0],
+            [0.0, 0.0, 1.0]
+        ],
+        description="Camera intrinsic matrix (3x3)"
+    )
+    
+    # Distortion coefficients (1x5: k1, k2, p1, p2, k3)
+    dist_coef: list[float] = Field(
+        default=[0.0, 0.0, 0.0, 0.0, 0.0],
+        description="Distortion coefficients [k1, k2, p1, p2, k3]"
+    )
+    
+    # AprilTag board configuration
+    apriltag_family: str = Field(default="t36h11", description="AprilTag family")
+    apriltag_tags_x: int = Field(default=6, description="Number of tags in X direction")
+    apriltag_tags_y: int = Field(default=6, description="Number of tags in Y direction")
+    apriltag_tag_size: float = Field(default=0.05, description="Tag size in meters")
+    apriltag_tag_spacing: float = Field(default=0.01, description="Tag spacing in meters")
+    apriltag_first_marker: int = Field(default=0, description="First marker ID")
+    
+    # Calibration image storage
+    calibration_images_dir: str = Field(default="calibration_images", description="Directory to store calibration images")
+
+
 class DetectionConfig(BaseModel):
     """Detection algorithm configuration"""
     confidence_threshold: float = 0.5
@@ -94,6 +124,7 @@ class ZMQConfig(BaseModel):
 class SystemConfig(BaseModel):
     """Overall system configuration with YAML persistence support"""
     camera: CameraConfig = Field(default_factory=CameraConfig)
+    calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
 

@@ -122,11 +122,13 @@ class RGBTrackApplication:
             self.webui = WebUI(
                 camera_config=self.config.camera,
                 detection_config=self.config.detection,
+                calibration_config=self.config.calibration,
                 camera_cls=type(self.camera),
                 on_preview=self._handle_preview,
                 on_live_toggle=self._handle_live_toggle,
                 on_config_update=self._handle_config_update,
                 on_detection_config_update=self._handle_detection_config_update,
+                on_calibration_config_update=self._handle_calibration_config_update,
                 on_camera_reset=self._handle_camera_reset,
                 on_save_config=self._handle_save_config,
                 on_wb_calibrate=self._handle_wb_calibrate,
@@ -393,6 +395,19 @@ class RGBTrackApplication:
             
         except Exception as e:
             logger.error(f"Detection config update error: {e}")
+
+    def _handle_calibration_config_update(self, config):
+        """Handle calibration configuration update from UI"""
+        try:
+            logger.info("Updating calibration configuration...")
+            
+            # Update system config
+            self.config.calibration = config
+            
+            logger.info("✓ Calibration configuration updated")
+            
+        except Exception as e:
+            logger.error(f"Calibration config update error: {e}")
 
     def _handle_save_config(self):
         """Save current configuration to file"""

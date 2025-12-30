@@ -3,12 +3,17 @@
 __version__ = "0.1.0"
 
 # Export main classes for convenient imports
-from .config import SystemConfig, CameraConfig, DetectionConfig, ZMQConfig
+from .config import SystemConfig, CameraConfig, DetectionConfig, ZMQConfig, CalibrationConfig
 from .camera import CameraBase, DummyCamera, create_camera
 from .detection import DetectionAlgorithm, DetectionResult
 from .zmq_publisher import ZMQPublisher
 from .zmq_subscriber import ZMQSubscriber, EnhancedSubscriber, create_subscriber_from_config
 from .webui import WebUI
+from .calibration import (
+    CameraCalibrator,
+    AprilTagBoardConfig,
+    generate_apriltag_board
+)
 
 __all__ = [
     # Configuration
@@ -16,6 +21,7 @@ __all__ = [
     'CameraConfig', 
     'DetectionConfig',
     'ZMQConfig',
+    'CalibrationConfig',
     # Camera
     'CameraBase',
     'DummyCamera',
@@ -30,4 +36,8 @@ __all__ = [
     'create_subscriber_from_config',
     # UI
     'WebUI',
+    # Calibration
+    'CameraCalibrator',
+    'AprilTagBoardConfig',
+    'generate_apriltag_board',
 ]
