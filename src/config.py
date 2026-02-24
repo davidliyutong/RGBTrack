@@ -147,10 +147,6 @@ class SystemConfig(BaseModel):
     ui_host: str = "0.0.0.0"
     ui_port: int = 7860
 
-    # Thread settings
-    max_fps: int = 30
-    frame_buffer_size: int = 10
-
     @classmethod
     def from_yaml(cls, path: Path) -> "SystemConfig":
         """Load configuration from YAML file"""

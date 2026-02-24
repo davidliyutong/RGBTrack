@@ -8,8 +8,9 @@ from typing import Optional, Callable
 import cv2
 import gradio as gr
 import numpy as np
+import av
 
-from .config import CameraConfig, DetectionConfig, CalibrationConfig, SystemConfig
+from .config import CameraConfig, CalibrationConfig, SystemConfig
 from .camera import CameraBase
 from .calibration import (
     CameraCalibrator,
@@ -29,13 +30,11 @@ class WebUI:
     def __init__(
         self,
         config: SystemConfig,
-        detection_config: DetectionConfig,
         calibration_config: CalibrationConfig,
         camera_cls: type[CameraBase],
-        on_preview: Callable[[bool], Optional[np.ndarray]],
-        on_live_toggle: Callable[[bool], None],
+        on_preview: Callable[[], Optional[np.ndarray]],
+        on_freeze_toggle: Callable[[bool], None],
         on_config_update: Callable[[CameraConfig], None],
-        on_detection_config_update: Callable[[DetectionConfig], None],
         on_calibration_config_update: Callable[[CalibrationConfig], None],
         on_camera_reset: Callable[[], str] = lambda: "Camera reset not implemented",
         on_save_config: Callable[[], None] = lambda: None,
@@ -45,14 +44,12 @@ class WebUI:
         port: int = 7860
     ):
         self.camera_config = config.camera
-        self.calibration_config = config.calibration
-        self.detection_config = detection_config
+        self.config = config
         self.calibration_config = calibration_config
         self.camera_cls = camera_cls
         self.on_preview = on_preview
-        self.on_live_toggle = on_live_toggle
+        self.on_freeze_toggle = on_freeze_toggle
         self.on_config_update = on_config_update
-        self.on_detection_config_update = on_detection_config_update
         self.on_calibration_config_update = on_calibration_config_update
         self.on_camera_reset = on_camera_reset
         self.on_save_config = on_save_config
@@ -62,8 +59,17 @@ class WebUI:
         self.port = port
 
         self.app = None
-        self.is_live = False
-        self.detection_enabled = True
+        self.frozen = False
+        self.last_frame: Optional[np.ndarray] = None
+        self._stream_fps = 0.0
+
+        # Recording state
+        self._recording = False
+        self._av_container: Optional[av.container.OutputContainer] = None
+        self._av_stream: Optional[av.video.stream.VideoStream] = None
+        self._record_frame_count = 0
+        self._record_start_time = 0.0
+        self._record_path: Optional[Path] = None
 
         # Initialize calibrator
         self.calibrator: Optional[CameraCalibrator] = None
@@ -205,41 +211,7 @@ class WebUI:
                             apply_btn = gr.Button("💾 Apply Configuration", variant="primary")
                             config_status = gr.Textbox(label="Status", interactive=False, lines=2)
 
-                        # --------------- TAB 2: Detection Configuration ---------------
-                        with gr.Tab("🔍 Detection"):
-                            gr.Markdown("### Detection Configuration")
-
-                            detection_prompt = gr.Textbox(
-                                label="SAM Prompt",
-                                value=self.detection_config.prompt,
-                                lines=2
-                            )
-
-                            confidence_slider = gr.Slider(
-                                minimum=0.0,
-                                maximum=1.0,
-                                value=self.detection_config.confidence_threshold,
-                                step=0.01,
-                                label="Confidence Threshold"
-                            )
-
-                            nms_slider = gr.Slider(
-                                minimum=0.0,
-                                maximum=1.0,
-                                value=self.detection_config.nms_threshold,
-                                step=0.01,
-                                label="NMS Threshold"
-                            )
-
-                            mesh_path_text = gr.Textbox(
-                                label="Mesh Path",
-                                value=self.detection_config.mesh_path
-                            )
-
-                            apply_detection_btn = gr.Button("💾 Apply Detection Config", variant="primary")
-                            detection_status = gr.Textbox(label="Status", interactive=False, lines=2)
-
-                        # --------------- TAB 3: Calibration ---------------
+                        # --------------- TAB 2: Calibration ---------------
                         with gr.Tab("🎯 Calibration"):
                             gr.Markdown("### AprilTag Board Setup")
 
@@ -340,17 +312,16 @@ class WebUI:
                     )
 
                     with gr.Row():
-                        preview_btn = gr.Button("📷 Capture", size="lg", variant="primary")
                         reset_camera_btn = gr.Button("🔄 Reset Camera", size="lg")
+                        freeze_btn = gr.Button("⏸ Freeze", size="lg", variant="secondary")
+                        record_btn = gr.Button("⏺ Record", size="lg", variant="secondary")
 
                     with gr.Row():
-                        distortion_toggle = gr.Checkbox(label="Distortion Correction", value=False)
-                        detection_toggle = gr.Checkbox(label="Detection", value=False)
-                        live_toggle = gr.Checkbox(label="Live Mode", value=False)
-
-                    with gr.Row():
-                        status_text = gr.Textbox(label="Status", value="Ready", interactive=False)
+                        status_text = gr.Textbox(label="Status", value="🟢 Streaming", interactive=False)
                         fps_text = gr.Textbox(label="FPS", value="0.0", interactive=False)
+
+                    # Timer to drive continuous streaming
+                    stream_timer = gr.Timer(value=0.1)
 
             # ==================== Event Handlers ====================
 
@@ -375,33 +346,39 @@ class WebUI:
                     logger.error(f"Failed to update config: {e}")
                     return f"✗ Error: {str(e)}"
 
-            def update_detection_config(prompt, confidence, nms, mesh_path):
+            def stream_frame():
+                if self.frozen:
+                    if self.last_frame is not None:
+                        return self.last_frame, "⏸ Frozen", f"{self._stream_fps:.1f}"
+                    else:
+                        placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                        cv2.putText(placeholder, "Frozen - No frame", (150, 240),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                        return placeholder, "⏸ Frozen", "0.0"
                 try:
-                    self.detection_config.prompt = str(prompt)
-                    self.detection_config.confidence_threshold = float(confidence)
-                    self.detection_config.nms_threshold = float(nms)
-                    self.detection_config.mesh_path = str(mesh_path)
-                    self.on_detection_config_update(self.detection_config)
-                    if self.on_save_config:
-                        self.on_save_config()
-                    return f"✓ Detection config saved to {self.config_path}"
-                except Exception as e:
-                    logger.error(f"Failed to update detection config: {e}")
-                    return f"✗ Error: {str(e)}"
+                    start = time.time()
+                    frame = self.on_preview()
+                    elapsed = time.time() - start
+                    self._stream_fps = 1.0 / elapsed if elapsed > 0 else 0
 
-            def take_preview(detection_enabled, distortion_enabled):
-                try:
-                    frame = self.on_preview(detection_enabled)
                     if frame is not None:
-                        return frame
+                        self.last_frame = frame
+                        # Write frame to video if recording
+                        if self._recording and self._av_container is not None and self._av_stream is not None:
+                            av_frame = av.VideoFrame.from_ndarray(frame, format='rgb24')
+                            av_frame.pts = self._record_frame_count
+                            for packet in self._av_stream.encode(av_frame):
+                                self._av_container.mux(packet)
+                            self._record_frame_count += 1
+                        return frame, "🟢 Streaming", f"{self._stream_fps:.1f}"
                     else:
                         placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
                         cv2.putText(placeholder, "No camera available", (180, 240),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                        return placeholder
+                        return placeholder, "⚠ No camera", "0.0"
                 except Exception as e:
-                    logger.error(f"Preview failed: {e}")
-                    return None
+                    logger.error(f"Stream error: {e}")
+                    return self.last_frame, f"✗ Error: {e}", "0.0"
 
             def refresh_cameras():
                 return gr.Dropdown(choices=self._get_camera_choices())
@@ -417,14 +394,54 @@ class WebUI:
                 is_manual = (mode == "manual")
                 return [gr.Slider(interactive=is_manual)] * 3
 
-            def toggle_live(is_live):
-                try:
-                    self.is_live = is_live
-                    self.on_live_toggle(is_live)
-                    return "Live mode: ACTIVE" if is_live else "Live mode: INACTIVE"
-                except Exception as e:
-                    logger.error(f"Live toggle failed: {e}")
-                    return f"Error: {str(e)}"
+            def toggle_freeze():
+                self.frozen = not self.frozen
+                self.on_freeze_toggle(self.frozen)
+                if self.frozen:
+                    return gr.update(value="▶ Resume", variant="primary"), "⏸ Frozen"
+                else:
+                    return gr.update(value="⏸ Freeze", variant="secondary"), "🟢 Streaming"
+
+            def toggle_record():
+                if not self._recording:
+                    # Start recording
+                    if self.last_frame is None:
+                        return gr.update(), "✗ No frame to determine size"
+                    h, w = self.last_frame.shape[:2]
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    output_path = Path(f"recording_{timestamp}.mp4")
+                    fps = self.config.detection.fps
+                    try:
+                        container = av.open(str(output_path), mode='w')
+                        stream = container.add_stream('h264', rate=fps)
+                        stream.width = w
+                        stream.height = h
+                        stream.pix_fmt = 'yuv420p'
+                        self._av_container = container
+                        self._av_stream = stream
+                    except Exception as e:
+                        logger.error(f"Failed to create video file: {e}")
+                        return gr.update(), f"✗ Failed to create {output_path}: {e}"
+                    self._recording = True
+                    self._record_frame_count = 0
+                    self._record_start_time = time.time()
+                    self._record_path = output_path
+                    logger.info(f"Recording started: {output_path} ({w}x{h} @ {fps}fps, h264)")
+                    return gr.update(value="⏹ Stop", variant="stop"), f"🔴 Recording to {output_path}"
+                else:
+                    # Stop recording
+                    self._recording = False
+                    if self._av_container is not None and self._av_stream is not None:
+                        # Flush remaining packets
+                        for packet in self._av_stream.encode():
+                            self._av_container.mux(packet)
+                        self._av_container.close()
+                        self._av_container = None
+                        self._av_stream = None
+                    elapsed = time.time() - self._record_start_time
+                    msg = f"✓ Saved {self._record_frame_count} frames ({elapsed:.1f}s) → {self._record_path}"
+                    logger.info(f"Recording stopped: {self._record_frame_count} frames in {elapsed:.1f}s")
+                    return gr.update(value="⏺ Record", variant="secondary"), msg
 
             def calibrate_wb():
                 try:
@@ -469,7 +486,7 @@ class WebUI:
                 try:
                     if self.calibrator is None:
                         return None, "0", "✗ Calibrator not initialized"
-                    frame = self.on_preview(False)
+                    frame = self.on_preview()
                     if frame is None:
                         return None, str(self.calibrator.get_image_count()), "✗ No frame"
                     success, annotated = self.calibrator.add_image(frame)
@@ -559,15 +576,11 @@ class WebUI:
                                     distortion_k1, distortion_k2, distortion_p1, distortion_p2, distortion_k3, undistort_checkbox],
                             outputs=config_status)
 
-            apply_detection_btn.click(update_detection_config,
-                                      inputs=[detection_prompt, confidence_slider, nms_slider, mesh_path_text],
-                                      outputs=detection_status)
-
-            preview_btn.click(take_preview, inputs=[detection_toggle, distortion_toggle], outputs=preview_image)
             reset_camera_btn.click(reset_camera, outputs=status_text)
+            freeze_btn.click(toggle_freeze, outputs=[freeze_btn, status_text])
+            record_btn.click(toggle_record, outputs=[record_btn, status_text])
             refresh_cameras_btn.click(refresh_cameras, outputs=device_sn)
             wb_mode_radio.change(toggle_wb_mode, inputs=wb_mode_radio, outputs=[red_slider, green_slider, blue_slider])
-            live_toggle.change(toggle_live, inputs=live_toggle, outputs=status_text)
             wb_calibrate_btn.click(calibrate_wb, outputs=[config_status, red_slider, green_slider, blue_slider])
 
             # Calibration events
@@ -586,6 +599,9 @@ class WebUI:
             save_calibration_btn.click(save_calibration_results,
                                        inputs=[K_00, K_02, K_11, K_12, dist_k1, dist_k2, dist_p1, dist_p2, dist_k3],
                                        outputs=save_calib_status)
+
+            # Live video stream via timer
+            stream_timer.tick(fn=stream_frame, outputs=[preview_image, status_text, fps_text])
 
         self.app = app
         return app

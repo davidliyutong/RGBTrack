@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-RGBTrack}"
-PYTHON_VERSION="${PYTHON_VERSION:-3.9}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SAM2_DIR="${SAM2_DIR:-${WORKSPACE_DIR}/segment-anything-2-real-time}"
 INSTALL_KAOLIN="${INSTALL_KAOLIN:-0}"
@@ -50,7 +50,7 @@ else
 fi
 
 if [[ "${INSTALL_PYTORCH3D}" == "1" ]]; then
-	echo "[INFO] Installing PyTorch3D wheel..."
+	echo "[INFO] Installing PyTorch3D from source ..."
 	python -m pip install --quiet --no-index --no-cache-dir --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git"
 else
 	echo "[INFO] Skipping PyTorch3D (INSTALL_PYTORCH3D=0)."

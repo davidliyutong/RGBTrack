@@ -1,12 +1,10 @@
-"""Main application with multi-threaded framework"""
+"""Main application - Camera adjustment and calibration tool"""
 
 import logging
 import signal
 import sys
-import threading
 import time
 from pathlib import Path
-from queue import Queue, Empty
 from typing import Optional
 
 import numpy as np
@@ -14,9 +12,7 @@ import cv2
 
 from .camera import CameraBase, create_camera
 from .config import SystemConfig
-from .detection import DetectionAlgorithm, DetectionResult
 from .webui import WebUI
-from .zmq_publisher import ZMQPublisher
 
 # Default configuration file path
 DEFAULT_CONFIG_FILE = Path("config.yaml")
@@ -36,13 +32,10 @@ logger = logging.getLogger(__name__)
 
 class RGBTrackApplication:
     """
-    Main application with multi-threaded framework.
+    Camera adjustment and calibration application.
 
     Architecture:
-    - Main thread: Coordinates all components
-    - UI thread: Runs Gradio web interface
-    - Detection thread: Processes frames and runs detection algorithm
-    - ZMQ thread: Publishes detection results (runs within ZMQPublisher)
+    - Main thread: Coordinates all components and runs Gradio web interface
     """
 
     def __init__(self, config: Optional[SystemConfig] = None, config_file: Optional[Path] = None, use_dummy_camera: bool = True):
@@ -71,20 +64,11 @@ class RGBTrackApplication:
 
         # Components
         self.camera: Optional[CameraBase] = None
-        self.detector: Optional[DetectionAlgorithm] = None
-        self.zmq_publisher: Optional[ZMQPublisher] = None
         self.webui: WebUI | None = None
 
-        # Threading
+        # State
         self._running = False
-        self._live_mode = False
-        self._detection_thread: Optional[threading.Thread] = None
-        self._frame_queue: Queue[np.ndarray] = Queue(maxsize=self.config.frame_buffer_size)
-
-        # Statistics
-        self._frame_count = 0
-        self._last_fps_time = time.time()
-        self._fps = 0.0
+        self._frozen = False
 
         # Shutdown handling
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -104,30 +88,16 @@ class RGBTrackApplication:
             # 1. Initialize camera
             logger.info("Initializing camera...")
             self.camera = create_camera(self.config.camera, use_dummy=self.use_dummy_camera)
-            # if not self.camera.open():
-            #     logger.error("Failed to open camera")
-            #     return False
 
-            # 2. Initialize detection algorithm
-            logger.info("Initializing detection algorithm...")
-            self.detector = DetectionAlgorithm(self.config)
-
-            # 3. Initialize ZMQ publisher
-            logger.info("Initializing ZMQ publisher...")
-            self.zmq_publisher = ZMQPublisher(self.config.zmq)
-            self.zmq_publisher.start()
-
-            # 4. Initialize Web UI
+            # 2. Initialize Web UI
             logger.info("Initializing Web UI...")
             self.webui = WebUI(
                 config=self.config,
-                detection_config=self.config.detection,
                 calibration_config=self.config.calibration,
                 camera_cls=type(self.camera),
                 on_preview=self._handle_preview,
-                on_live_toggle=self._handle_live_toggle,
+                on_freeze_toggle=self._handle_freeze_toggle,
                 on_config_update=self._handle_config_update,
-                on_detection_config_update=self._handle_detection_config_update,
                 on_calibration_config_update=self._handle_calibration_config_update,
                 on_camera_reset=self._handle_camera_reset,
                 on_save_config=self._handle_save_config,
@@ -154,15 +124,6 @@ class RGBTrackApplication:
         logger.info("Starting RGBTrack application...")
 
         try:
-            # Start detection thread
-            self._detection_thread = threading.Thread(
-                target=self._detection_loop,
-                daemon=True,
-                name="DetectionThread"
-            )
-            self._detection_thread.start()
-            logger.info("✓ Detection thread started")
-
             # Start Web UI (this will block in the main thread)
             logger.info("✓ Starting Web UI...")
             self.webui.launch(share=False)  # pyright: ignore[reportOptionalMemberAccess]
@@ -171,7 +132,6 @@ class RGBTrackApplication:
             logger.info("✓ Application running. Press Ctrl+C to stop.")
             while self._running:
                 time.sleep(1)
-                self._update_statistics()
 
         except KeyboardInterrupt:
             logger.info("Keyboard interrupt received")
@@ -187,17 +147,7 @@ class RGBTrackApplication:
 
         logger.info("Stopping RGBTrack application...")
         self._running = False
-        self._live_mode = False
-
-        # Stop detection thread
-        if self._detection_thread is not None:
-            logger.info("Stopping detection thread...")
-            self._detection_thread.join(timeout=2.0)
-
-        # Stop ZMQ publisher
-        if self.zmq_publisher is not None:
-            logger.info("Stopping ZMQ publisher...")
-            self.zmq_publisher.stop()
+        self._frozen = True
 
         # Close camera
         if self.camera is not None:
@@ -210,60 +160,6 @@ class RGBTrackApplication:
             self.webui.close()
 
         logger.info("✓ Application stopped")
-
-    def _detection_loop(self):
-        """Main detection loop running in separate thread"""
-        logger.info("Detection thread started")
-
-        while self._running:
-            try:
-                if not self._live_mode:
-                    # Not in live mode, just sleep
-                    time.sleep(0.1)
-                    continue
-
-                # Capture frame from camera
-                frame = self.camera.capture_frame()  # pyright: ignore[reportOptionalMemberAccess]
-
-                if frame is None:
-                    time.sleep(0.01)
-                    continue
-
-                # Apply undistortion if enabled
-                if self.config.camera.undistort:
-                    frame = self._apply_undistortion(frame)
-
-                # Run detection
-                result = self.detector.detect(frame)  # pyright: ignore[reportOptionalMemberAccess]
-
-                # Publish result via ZMQ
-                if self.zmq_publisher is not None:
-                    self.zmq_publisher.publish(result)
-
-                # Update statistics
-                self._frame_count += 1
-
-                # Rate limiting
-                time.sleep(1.0 / self.config.max_fps)
-
-            except Exception as e:
-                logger.error(f"Error in detection loop: {e}", exc_info=True)
-                time.sleep(0.1)
-
-        logger.info("Detection thread stopped")
-
-    def _update_statistics(self):
-        """Update FPS and other statistics"""
-        current_time = time.time()
-        elapsed = current_time - self._last_fps_time
-
-        if elapsed >= 1.0:  # Update every second
-            self._fps = self._frame_count / elapsed
-            logger.debug(f"FPS: {self._fps:.2f}")
-
-            # Reset counters
-            self._frame_count = 0
-            self._last_fps_time = current_time
 
     def _apply_undistortion(self, frame: np.ndarray) -> np.ndarray:
         """
@@ -307,13 +203,10 @@ class RGBTrackApplication:
             logger.error(f"Undistortion failed: {e}")
             return frame  # Return original frame on error
 
-    def _handle_preview(self, detection_enabled: bool = True) -> Optional[np.ndarray]:
-        """Handle preview request from UI
-        Args:
-            detection_enabled: Whether to run detection and draw results on the frame
-        """
+    def _handle_preview(self) -> Optional[np.ndarray]:
+        """Handle preview request from UI"""
         try:
-            if self.camera is not None and not self.camera.is_open():  # pyright: ignore[reportOptionalMemberAccess]
+            if self.camera is not None and not self.camera.is_open():
                 self.camera.open()
 
             if self.camera is None or not self.camera.is_open():
@@ -329,31 +222,19 @@ class RGBTrackApplication:
             if self.config.camera.undistort:
                 frame = self._apply_undistortion(frame)
 
-            if detection_enabled and self.detector is not None:
-                # Run detection on preview
-                result = self.detector.detect(frame)
-                # Draw detections on frame
-                frame = self.detector.draw_detections(frame, result)
-
             return frame
 
         except Exception as e:
             logger.error(f"Preview error: {e}")
             return None
 
-    def _handle_live_toggle(self, is_live: bool):
-        """Handle live mode toggle from UI"""
+    def _handle_freeze_toggle(self, frozen: bool):
+        """Handle freeze toggle from UI"""
         try:
-            self._live_mode = is_live
-
-            if is_live:
-                # TODO: feed the detection thread
-                logger.info("Live mode ENABLED")
-            else:
-                logger.info("Live mode DISABLED")
-
+            self._frozen = frozen
+            logger.info(f"Processing {'FROZEN' if frozen else 'RESUMED'}")
         except Exception as e:
-            logger.error(f"Live toggle error: {e}")
+            logger.error(f"Freeze toggle error: {e}")
 
     def _handle_config_update(self, config):
         """Handle configuration update from UI"""
@@ -379,22 +260,6 @@ class RGBTrackApplication:
 
         except Exception as e:
             logger.error(f"Config update error: {e}")
-
-    def _handle_detection_config_update(self, config):
-        """Handle detection configuration update from UI"""
-        try:
-            logger.info("Updating detection configuration...")
-
-            # Update system config
-            self.config.detection = config
-
-            # Reinitialize detector with new config if needed
-            if self.detector is not None:
-                self.detector.detection_config = config
-                logger.info("✓ Detection configuration updated")
-
-        except Exception as e:
-            logger.error(f"Detection config update error: {e}")
 
     def _handle_calibration_config_update(self, config):
         """Handle calibration configuration update from UI"""
@@ -423,10 +288,10 @@ class RGBTrackApplication:
         try:
             logger.info("Resetting camera...")
 
-            # Stop live mode if active
-            was_live = self._live_mode
-            if was_live:
-                self._live_mode = False
+            # Pause processing during camera reset
+            was_frozen = self._frozen
+            if not was_frozen:
+                self._frozen = True
                 time.sleep(0.2)  # Give detection thread time to stop
 
             if self.camera is not None:
@@ -440,9 +305,9 @@ class RGBTrackApplication:
                 if self.camera.open():
                     logger.info("✓ Camera reset successful")
 
-                    # Restore live mode if it was active
-                    if was_live:
-                        self._live_mode = True
+                    # Restore processing state
+                    if not was_frozen:
+                        self._frozen = False
 
                     return "✓ Camera reset successful"
                 else:
@@ -483,7 +348,7 @@ class RGBTrackApplication:
 def main():
     """Main entry point"""
     logger.info("=" * 60)
-    logger.info("RGBTrack Multi-threaded Framework")
+    logger.info("RGBTrack Camera Calibration Tool")
     logger.info("=" * 60)
 
     # Create and start application
