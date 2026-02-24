@@ -1,0 +1,15 @@
+# Include the USB rules file
+include 88-mvusb.rules
+
+# Include installation scripts
+include install-msvdk.sh
+include uninstall-msvdk.sh
+
+# Include all shared libraries
+recursive-include mvsdk/lib *.so
+
+# Include documentation
+include README.md
+
+# Include license if it exists
+include LICENSE*

@@ -1,0 +1,5 @@
+pydantic>=2.12
+av
+huggingface-hub==1.1.6
+gradio==4.0.0
+aprilgrid==0.5.0

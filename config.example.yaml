@@ -1,0 +1,201 @@
+# RGBTrack System Configuration
+# This file is automatically managed by the application
+
+# ============================================================================
+# Camera Configuration
+# ============================================================================
+# Controls camera hardware settings and image capture parameters
+camera:
+  # Camera device serial number (leave empty for default camera)
+  device_sn: ""
+
+  # Video file path for playback mode (leave empty to use live camera)
+  file: ""
+
+  # Image resolution
+  width: 1280 # Image width in pixels
+  height: 720 # Image height in pixels
+
+  # Exposure time in milliseconds (controls image brightness)
+  exposure_time_ms: 30
+  exposure_min: 1 # Minimum allowed exposure time
+  exposure_max: 100 # Maximum allowed exposure time
+
+  # Camera gain setting (amplifies sensor signal)
+  gain: 1.0
+  gain_min: 0.0 # Minimum allowed gain
+  gain_max: 10.0 # Maximum allowed gain
+
+  # Gamma correction (adjusts image contrast and brightness curve)
+  gamma: 1.0
+  gamma_min: 0.1 # Minimum allowed gamma
+  gamma_max: 5.0 # Maximum allowed gamma
+
+  # White balance mode: 'auto' for automatic, 'manual' for custom RGB values
+  wb_mode: auto
+
+  # Manual white balance RGB multipliers (only used when wb_mode is 'manual')
+  red_balance: 1.0
+  green_balance: 1.0
+  blue_balance: 1.0
+  balance_min: 0 # Minimum allowed balance value
+  balance_max: 400 # Maximum allowed balance value
+
+  # Camera mode: 'normal' for standard operation
+  mode: normal
+
+  # Lens distortion coefficients (Brown-Conrady model)
+  # k1, k2, k3: radial distortion coefficients
+  # p1, p2: tangential distortion coefficients
+  distortion: 
+    - 0.0 # k1
+    - 0.0 # k2
+    - 0.0 # p1
+    - 0.0 # p2
+    - 0.0 # k3
+  distortion_min: -1.0 # Minimum allowed distortion coefficient
+  distortion_max: 1.0 # Maximum allowed distortion coefficient
+
+  # Enable lens distortion correction
+  undistort: false
+
+# ============================================================================
+# Calibration Configuration
+# ============================================================================
+# Camera intrinsic and extrinsic parameters for 3D reconstruction
+calibration:
+  # Camera intrinsic matrix K (3x3)
+  # [[fx,  0, cx],
+  #  [ 0, fy, cy],
+  #  [ 0,  0,  1]]
+  # fx, fy: focal lengths in pixels
+  # cx, cy: principal point (optical center) in pixels
+  K:
+    - - 600.0 # fx: focal length in x-direction
+      - 0.0
+      - 320.0 # cx: principal point x-coordinate
+    - - 0.0
+      - 600.0 # fy: focal length in y-direction
+      - 240.0 # cy: principal point y-coordinate
+    - - 0.0
+      - 0.0
+      - 1.0
+
+  # Camera extrinsic matrix (4x4 transformation matrix)
+  # Transforms from camera coordinate system to world coordinate system
+  # [[R11, R12, R13, tx],
+  #  [R21, R22, R23, ty],
+  #  [R31, R32, R33, tz],
+  #  [  0,   0,   0,  1]]
+  # R: 3x3 rotation matrix, t: 3x1 translation vector
+  extrinsic_matrix:
+    - - 1.0
+      - 0.0
+      - 0.0
+      - 0.0 # tx: translation in x
+    - - 0.0
+      - 1.0
+      - 0.0
+      - 0.0 # ty: translation in y
+    - - 0.0
+      - 0.0
+      - 1.0
+      - 0.0 # tz: translation in z
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+
+  # Distortion coefficients [k1, k2, p1, p2, k3]
+  # k1, k2, k3: radial distortion
+  # p1, p2: tangential distortion
+  dist_coef:
+    - 0.0 # k1
+    - 0.0 # k2
+    - 0.0 # p1
+    - 0.0 # p2
+    - 0.0 # k3
+
+  # AprilTag calibration board configuration
+  apriltag_family: t36h11 # Tag family (e.g., t36h11, t25h9, t16h5)
+  apriltag_tags_x: 6 # Number of tags in x-direction
+  apriltag_tags_y: 6 # Number of tags in y-direction
+  apriltag_tag_size: 0.05 # Size of each tag in meters
+  apriltag_tag_spacing: 0.01 # Spacing between tags in meters
+  apriltag_first_marker: 0 # ID of the first tag in the board
+
+  # Directory to store calibration images
+  calibration_images_dir: calibration_images
+
+# ============================================================================
+# Detection and Tracking Configuration
+# ============================================================================
+# Object detection, segmentation, and pose estimation settings
+detection:
+  # Minimum confidence score for detections (0.0 - 1.0)
+  confidence_threshold: 0.5
+
+  # Non-maximum suppression threshold to remove overlapping detections (0.0 - 1.0)
+  # Lower values = more aggressive suppression
+  nms_threshold: 0.4
+
+  # Path to 3D mesh model file for the target object
+  mesh_path: models/detector.obj
+
+  # Text prompt for object detection/segmentation (if applicable)
+  prompt: ""
+
+  # SAM2 (Segment Anything Model 2) configuration
+  sam2_cfg: configs/sam2.1/sam2.1_hiera_t.yaml # SAM2 model configuration file
+  sam2_checkpoint: checkpoints/sam2.1_hiera_tiny.pt # SAM2 model checkpoint file
+
+  # Detection mode (0 for default mode)
+  mode: 0
+
+  # Number of refinement iterations for tracking
+  track_refine_iter: 5
+
+  # Enable Kalman filter for pose smoothing and prediction
+  use_kalman_filter: false
+
+  # Camera/video frame rate (frames per second)
+  fps: 30
+
+  # Kalman filter tuning parameters
+  # Process noise: uncertainty in system dynamics (higher = trust measurements more)
+  kalman_process_noise: 0.01
+
+  # Measurement noise: uncertainty in observations (higher = trust predictions more)
+  kalman_measurement_noise: 0.05
+
+# ============================================================================
+# ZMQ Communication Configuration
+# ============================================================================
+# Settings for ZeroMQ inter-process communication
+zmq:
+  # Transport protocol: 'ipc' (Unix sockets) or 'tcp' (network sockets)
+  transport: ipc
+
+  # Network host address (used when transport is 'tcp')
+  host: localhost
+
+  # Network port number (used when transport is 'tcp')
+  port: 5555
+
+  # Unix socket file path (used when transport is 'ipc')
+  socket_path: /tmp/rgbtrack.sock
+
+# ============================================================================
+# Web UI and Performance Configuration
+# ============================================================================
+# User interface host address (0.0.0.0 allows external connections)
+ui_host: 0.0.0.0
+
+# User interface port number
+ui_port: 7860
+
+# Maximum frames per second for processing and display
+max_fps: 30
+
+# Size of frame buffer for asynchronous processing
+frame_buffer_size: 10

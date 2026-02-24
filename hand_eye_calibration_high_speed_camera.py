@@ -5,6 +5,7 @@ import os
 import random
 import sys
 import matplotlib.pyplot as plt
+import json
 
 # ================== 用户输入参数 ==================
 checker_width = 0.015     # 每个小方格的宽度 (15mm)
@@ -36,6 +37,23 @@ if total_images > num_samples:
 else:
     T = 1
 print(f"Sampling every {T} image(s): total {len(images)} images for calibration...\n")
+
+def save_intrinsics_to_json(K, D, img_size, rms, json_path):
+    data = {
+        "model": "cv2.calibrateCamera",
+        "opencv_version": str(cv2.__version__),
+        "image_size": {
+            "width": int(img_size[0]),
+            "height": int(img_size[1])
+        },
+        "K": K.tolist(),
+        "dist": D.ravel().tolist(),
+        "rms_reprojection": float(rms)
+    }
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+    with open(json_path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"Saved intrinsics JSON to: {json_path}")
 
 # === 检测角点 ===
 for fname in images:
@@ -106,6 +124,10 @@ print("Distortion Coefficients (k1,k2,p1,p2,k3,...):\n", D.ravel())
 np.savez(os.path.join(output_dir, "high_speed_camera_checkerboard_pinhole_refined.npz"),
          K=K, D=D, rms=rms_refined)
 print(f"\nSaved refined parameters to high_speed_camera_checkerboard_pinhole_refined.npz")
+
+# === 写入 JSON 到指定路径 ===
+json_output_path = "/home/xxz/code/toss-reorient/cam_cali_imgs/intrinsics/cam0_intrinsics.json"
+save_intrinsics_to_json(K, D, img_size, rms_refined, json_output_path)
 
 # === 绘制误差图 ===
 plt.figure(figsize=(10, 4))

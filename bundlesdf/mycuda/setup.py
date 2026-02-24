@@ -15,8 +15,17 @@ from torch.utils.cpp_extension import load
 code_dir = os.path.dirname(os.path.realpath(__file__))
 
 
-nvcc_flags = ['-Xcompiler', '-O3', '-std=c++14', '-U__CUDA_NO_HALF_OPERATORS__', '-U__CUDA_NO_HALF_CONVERSIONS__', '-U__CUDA_NO_HALF2_OPERATORS__']
-c_flags = ['-O3', '-std=c++14']
+nvcc_flags = ['-Xcompiler', '-O3', '-std=c++17', '-U__CUDA_NO_HALF_OPERATORS__', '-U__CUDA_NO_HALF_CONVERSIONS__', '-U__CUDA_NO_HALF2_OPERATORS__']
+c_flags = ['-O3', '-std=c++17']
+
+conda_prefix = os.environ.get('CONDA_PREFIX', '')
+candidate_eigen_dirs = [
+    "/usr/local/include/eigen3",
+    "/usr/include/eigen3",
+]
+if conda_prefix:
+    candidate_eigen_dirs.append(os.path.join(conda_prefix, "include", "eigen3"))
+include_dirs = [d for d in candidate_eigen_dirs if os.path.isdir(d)]
 
 setup(
     name='common',
@@ -32,10 +41,7 @@ setup(
             f"{code_dir}/torch_ngp_grid_encoder/bindings.cpp",
         ],extra_compile_args={'gcc': c_flags, 'nvcc': nvcc_flags}),
     ],
-    include_dirs=[
-        "/usr/local/include/eigen3",
-        "/usr/include/eigen3",
-    ],
+    include_dirs=include_dirs,
     cmdclass={
         'build_ext': BuildExtension
 })

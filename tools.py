@@ -3,6 +3,7 @@ import trimesh
 import matplotlib.pyplot as plt
 import open3d as o3d
 import cv2
+from pathlib import Path
 from Utils import *
 from scipy.spatial.distance import cdist
 import torch
@@ -15,6 +16,15 @@ from bop_toolkit_lib import pose_error
 
 from bop_toolkit_lib import misc
 from bop_toolkit_lib import visibility
+
+
+DEBUG_DIR = Path(__file__).resolve().parent / "tmp"
+
+
+def _save_debug_figure(mid):
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    plt.savefig(DEBUG_DIR / f"debug_{mid}.png")
+
 
 def render_rgbd(cad_model, object_pose, K, W, H):
     if type(object_pose) is np.ndarray:
@@ -791,7 +801,7 @@ def binary_search_depth(est,mesh, rgb, mask, K, depth_min=0.5, depth_max=2,w=640
             # #rgbtobgr
             # rgb_save= rgb_save[...,::-1]
             # cv2.imwrite(f"tmp/debug_{mid}.png", rgb_save)
-            plt.savefig(f"RGBTrack/tmp/debug_{mid}.png")
+            _save_debug_figure(mid)
             plt.close()  # Close the figure to free resources
         if abs(high-low)<0.001:
             break
@@ -845,7 +855,7 @@ def binary_search_scale(est,mesh, rgb,depth, mask, K, scale_min=0.2, scale_max=5
             rgb_copy= rgb.copy()
             rgb_copy[mask==0]=0
             plt.imshow(rgb_copy)
-            plt.savefig(f"RGBTrack/tmp/debug_{mid}.png")
+            _save_debug_figure(mid)
         if abs(high-low)<0.01:
             break
         if  abs(area-np.sum(mask))<20:
@@ -855,4 +865,3 @@ def binary_search_scale(est,mesh, rgb,depth, mask, K, scale_min=0.2, scale_max=5
         elif area<np.sum(mask):
             low=mid
     return pose, mid
-

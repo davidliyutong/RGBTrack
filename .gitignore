@@ -21,3 +21,5 @@ __pycache__/
 
 /segment-anything-2-real-time/
 
+.vscode
+config.yaml
