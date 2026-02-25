@@ -1,5 +1,5 @@
-# RGBTrack System Configuration
-# This file is automatically managed by the application
+# RGBTrack System Configuration - Example
+# Copy this file to config.yaml and customize for your setup
 
 # ============================================================================
 # Camera Configuration
@@ -10,26 +10,30 @@ camera:
   device_sn: ""
 
   # Video file path for playback mode (leave empty to use live camera)
+  # Format: file:///path/to/video.mp4
   file: ""
 
   # Image resolution
-  width: 1280 # Image width in pixels
-  height: 720 # Image height in pixels
+  width: 1280
+  height: 720
+  
+  # Camera frame rate (FPS)
+  fps: 30
 
   # Exposure time in milliseconds (controls image brightness)
   exposure_time_ms: 30
-  exposure_min: 1 # Minimum allowed exposure time
-  exposure_max: 100 # Maximum allowed exposure time
+  exposure_min: 1
+  exposure_max: 100
 
   # Camera gain setting (amplifies sensor signal)
   gain: 1.0
-  gain_min: 0.0 # Minimum allowed gain
-  gain_max: 10.0 # Maximum allowed gain
+  gain_min: 0.0
+  gain_max: 10.0
 
   # Gamma correction (adjusts image contrast and brightness curve)
   gamma: 1.0
-  gamma_min: 0.1 # Minimum allowed gamma
-  gamma_max: 5.0 # Maximum allowed gamma
+  gamma_min: 0.1
+  gamma_max: 5.0
 
   # White balance mode: 'auto' for automatic, 'manual' for custom RGB values
   wb_mode: auto
@@ -38,23 +42,11 @@ camera:
   red_balance: 1.0
   green_balance: 1.0
   blue_balance: 1.0
-  balance_min: 0 # Minimum allowed balance value
-  balance_max: 400 # Maximum allowed balance value
+  balance_min: 0.0
+  balance_max: 400.0
 
-  # Camera mode: 'normal' for standard operation
+  # Camera mode: 'normal' for standard operation, 'high_speed' for high-speed capture
   mode: normal
-
-  # Lens distortion coefficients (Brown-Conrady model)
-  # k1, k2, k3: radial distortion coefficients
-  # p1, p2: tangential distortion coefficients
-  distortion: 
-    - 0.0 # k1
-    - 0.0 # k2
-    - 0.0 # p1
-    - 0.0 # p2
-    - 0.0 # k3
-  distortion_min: -1.0 # Minimum allowed distortion coefficient
-  distortion_max: 1.0 # Maximum allowed distortion coefficient
 
   # Enable lens distortion correction
   undistort: false
@@ -71,12 +63,12 @@ calibration:
   # fx, fy: focal lengths in pixels
   # cx, cy: principal point (optical center) in pixels
   K:
-    - - 600.0 # fx: focal length in x-direction
+    - - 600.0 # fx
       - 0.0
-      - 320.0 # cx: principal point x-coordinate
+      - 320.0 # cx
     - - 0.0
-      - 600.0 # fy: focal length in y-direction
-      - 240.0 # cy: principal point y-coordinate
+      - 600.0 # fy
+      - 240.0 # cy
     - - 0.0
       - 0.0
       - 1.0
@@ -92,15 +84,15 @@ calibration:
     - - 1.0
       - 0.0
       - 0.0
-      - 0.0 # tx: translation in x
+      - 0.0
     - - 0.0
       - 1.0
       - 0.0
-      - 0.0 # ty: translation in y
+      - 0.0
     - - 0.0
       - 0.0
       - 1.0
-      - 0.0 # tz: translation in z
+      - 0.0
     - - 0.0
       - 0.0
       - 0.0
@@ -110,11 +102,11 @@ calibration:
   # k1, k2, k3: radial distortion
   # p1, p2: tangential distortion
   dist_coef:
-    - 0.0 # k1
-    - 0.0 # k2
-    - 0.0 # p1
-    - 0.0 # p2
-    - 0.0 # k3
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
 
   # AprilTag calibration board configuration
   apriltag_family: t36h11 # Tag family (e.g., t36h11, t25h9, t16h5)
@@ -142,15 +134,12 @@ detection:
   # Path to 3D mesh model file for the target object
   mesh_path: models/detector.obj
 
-  # Text prompt for object detection/segmentation (if applicable)
+  # Text prompt for object detection/segmentation (used by CLIP)
   prompt: ""
 
   # SAM2 (Segment Anything Model 2) configuration
-  sam2_cfg: configs/sam2.1/sam2.1_hiera_t.yaml # SAM2 model configuration file
-  sam2_checkpoint: checkpoints/sam2.1_hiera_tiny.pt # SAM2 model checkpoint file
-
-  # Detection mode (0 for default mode)
-  mode: 0
+  sam2_cfg: configs/sam2.1/sam2.1_hiera_t.yaml
+  sam2_checkpoint: checkpoints/sam2.1_hiera_tiny.pt
 
   # Number of refinement iterations for tracking
   track_refine_iter: 5
@@ -186,16 +175,35 @@ zmq:
   socket_path: /tmp/rgbtrack.sock
 
 # ============================================================================
-# Web UI and Performance Configuration
+# Viser 3D Visualization Configuration
 # ============================================================================
-# User interface host address (0.0.0.0 allows external connections)
-ui_host: 0.0.0.0
+# Settings for the viser-based 3D web visualization
+viser:
+  # Host address for viser server (0.0.0.0 allows external connections)
+  host: 0.0.0.0
 
-# User interface port number
-ui_port: 7860
+  # Port number for viser web interface
+  port: 8080
 
-# Maximum frames per second for processing and display
-max_fps: 30
+  # Show camera frustum/cone in 3D scene
+  show_camera_cone: true
 
-# Size of frame buffer for asynchronous processing
-frame_buffer_size: 10
+  # Show object trajectory trail in 3D scene
+  show_trajectory: true
+
+  # Number of recent poses to show in trajectory
+  trajectory_length: 100
+
+  # Scale factor for camera frustum visualization
+  camera_cone_scale: 0.1
+
+# ============================================================================
+# Calibration UI Configuration
+# ============================================================================
+# Settings for the Gradio-based calibration web interface
+calibration_ui:
+  # Host address for calibration UI (0.0.0.0 allows external connections)
+  host: 0.0.0.0
+
+  # Port number for calibration UI
+  port: 7860

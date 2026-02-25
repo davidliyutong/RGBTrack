@@ -336,7 +336,7 @@ class FoundationPose:
         @pts: (N,3) np array, downsampled scene points
         """
         set_seed(0)
-        logging.info("Welcome")
+        logging.debug("Welcome")
 
         if self.glctx is None:
             if glctx is None:
@@ -483,7 +483,7 @@ class FoundationPose:
         @pts: (N,3) np array, downsampled scene points
         """
         set_seed(0)
-        logging.info("Welcome")
+        logging.debug("Welcome")
 
         if self.glctx is None:
             if glctx is None:
@@ -624,7 +624,7 @@ class FoundationPose:
         if self.pose_last is None:
             logging.info("Please init pose by register first")
             raise RuntimeError
-        logging.info("Welcome")
+        logging.debug("Welcome")
 
         depth = torch.as_tensor(depth, device="cuda", dtype=torch.float)
         depth = erode_depth(depth, radius=2, device="cuda")
@@ -651,7 +651,7 @@ class FoundationPose:
             iteration=iteration,
             get_vis=self.debug >= 2,
         )
-        logging.info("pose done")
+        logging.debug("pose done")
         if self.debug >= 2:
             extra["vis"] = vis
         self.pose_last = pose
@@ -790,7 +790,7 @@ class FoundationPose:
         if self.pose_last is None:
             logging.info("Please init pose by register first")
             raise RuntimeError
-        logging.info("Welcome")
+        logging.debug("Welcome")
         threshold = 40
 
         if np.sum(mask) <= threshold:

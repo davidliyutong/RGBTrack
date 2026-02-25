@@ -136,12 +136,23 @@ class ZMQConfig(BaseModel):
             return f"tcp://{self.host}:{self.port}"
 
 
+class ViserConfig(BaseModel):
+    """Viser 3D visualization configuration"""
+    host: str = "0.0.0.0"
+    port: int = 8080
+    show_camera_cone: bool = True
+    show_trajectory: bool = True
+    trajectory_length: int = 100
+    camera_cone_scale: float = 0.1
+
+
 class SystemConfig(BaseModel):
     """Overall system configuration with YAML persistence support"""
     camera: CameraConfig = Field(default_factory=CameraConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
+    viser: ViserConfig = Field(default_factory=ViserConfig)
 
     # UI settings
     ui_host: str = "0.0.0.0"
