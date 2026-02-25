@@ -11,13 +11,16 @@ class CameraConfig(BaseModel):
     device_sn: str = ""  # Camera serial number
 
     # Video file support (for testing with recorded videos)
-    file: str = Field(default="", description="Video file path (format: file:///path/to/file.ext), disables hardware controls when set")
+    file: str = Field(
+        default="", description="Video file path (format: file:///path/to/file.ext), disables hardware controls when set")
 
     # Resolution
     width: int = 1280
     height: int = 720
+    fps: int = 30
 
-    exposure_time_ms: int = Field(default=30, description="Exposure time in milliseconds")
+    exposure_time_ms: int = Field(
+        default=30, description="Exposure time in milliseconds")
     exposure_min: int = 1
     exposure_max: int = 100
 
@@ -42,9 +45,6 @@ class CameraConfig(BaseModel):
 
     # Mode
     mode: Literal["high_speed", "normal"] = "normal"
-
-    # Distortion parameters (k1, k2, p1, p2, k3)
-    distortion: list[float] = Field(default=[0.0, 0.0, 0.0, 0.0, 0.0], description="Distortion coefficients [k1, k2, p1, p2, k3]")
 
     # Undistortion
     undistort: bool = False
@@ -78,23 +78,23 @@ class CalibrationConfig(BaseModel):
     )
 
     # AprilTag board configuration
-    apriltag_family: str = Field(default="t36h11", description="AprilTag family")
-    apriltag_tags_x: int = Field(default=6, description="Number of tags in X direction")
-    apriltag_tags_y: int = Field(default=6, description="Number of tags in Y direction")
-    apriltag_tag_size: float = Field(default=0.05, description="Tag size in meters")
-    apriltag_tag_spacing: float = Field(default=0.01, description="Tag spacing in meters")
-    apriltag_first_marker: int = Field(default=0, description="First marker ID")
+    apriltag_family: str = Field(
+        default="t36h11", description="AprilTag family")
+    apriltag_tags_x: int = Field(
+        default=6, description="Number of tags in X direction")
+    apriltag_tags_y: int = Field(
+        default=6, description="Number of tags in Y direction")
+    apriltag_tag_size: float = Field(
+        default=0.05, description="Tag size in meters")
+    apriltag_tag_spacing: float = Field(
+        default=0.01, description="Tag spacing in meters")
+    apriltag_first_marker: int = Field(
+        default=0, description="First marker ID")
 
     # Calibration image storage
-    calibration_images_dir: str = Field(default="calibration_images", description="Directory to store calibration images")
+    calibration_images_dir: str = Field(
+        default="calibration_images", description="Directory to store calibration images")
 
-class DetectionDebugConfig(BaseModel):
-    """Debug options for detection runtime."""
-    enabled: bool = Field(default=False, description="Enable detection debug mode")
-    record_raw_video: bool = Field(default=False, description="Record raw camera capture to video when debug is enabled")
-    raw_video_path: str = Field(default="output/camera_raw_capture.mp4", description="Output path for raw camera capture video")
-    raw_video_fps: int = Field(default=30, description="FPS for raw camera capture video")
-    raw_video_fourcc: str = Field(default="mp4v", description="FourCC codec for raw camera capture video")
 
 class DetectionConfig(BaseModel):
     """Detection algorithm configuration"""
@@ -104,15 +104,15 @@ class DetectionConfig(BaseModel):
     prompt: str = ""
     sam2_cfg: str = "configs/sam2.1/sam2.1_hiera_t.yaml"
     sam2_checkpoint: str = "checkpoints/sam2.1_hiera_tiny.pt"
-    mode: int = 0
     track_refine_iter: int = 5
 
     # Kalman filter settings for pose smoothing
-    use_kalman_filter: bool = Field(default=False, description="Enable Kalman filter for pose smoothing")
-    fps: int = Field(default=30, description="Camera frame rate (for Kalman filter dt)")
-    kalman_process_noise: float = Field(default=0.01, description="Kalman filter process noise")
-    kalman_measurement_noise: float = Field(default=0.05, description="Kalman filter measurement noise")
-    debug: DetectionDebugConfig = Field(default_factory=DetectionDebugConfig)
+    use_kalman_filter: bool = Field(
+        default=False, description="Enable Kalman filter for pose smoothing")
+    kalman_process_noise: float = Field(
+        default=0.01, description="Kalman filter process noise")
+    kalman_measurement_noise: float = Field(
+        default=0.05, description="Kalman filter measurement noise")
 
 
 class ZMQConfig(BaseModel):
@@ -123,17 +123,40 @@ class ZMQConfig(BaseModel):
     # TCP settings (used when transport='tcp')
     host: str = "localhost"
     port: int = 5555
+    control_port: int = 5556
 
     # Unix socket settings (used when transport='ipc')
     socket_path: str = "/tmp/rgbtrack.sock"
+    control_socket_path: str = "/tmp/rgbtrack_control.sock"
+
+    # 0 means publish as fast as new results arrive
+    # >0 means fixed interval publish (repeat latest payload when needed)
+    publish_interval_ms: int = 0
 
     @property
     def address(self) -> str:
-        """Get the ZMQ address based on transport type"""
+        """Get the ZMQ address for detection results based on transport type"""
         if self.transport == "ipc":
             return f"ipc://{self.socket_path}"
         else:
             return f"tcp://{self.host}:{self.port}"
+
+    @property
+    def results_address(self) -> str:
+        """Get the result PUB address."""
+        return self.address
+
+    @property
+    def control_address(self) -> str:
+        """Get the control REP address."""
+        if self.transport == "ipc":
+            return f"ipc://{self.control_socket_path}"
+        return f"tcp://{self.host}:{self.control_port}"
+
+    @property
+    def publish_interval_sec(self) -> float:
+        """Get publish interval in seconds."""
+        return max(0, self.publish_interval_ms) / 1000.0
 
 
 class ViserConfig(BaseModel):
@@ -146,6 +169,12 @@ class ViserConfig(BaseModel):
     camera_cone_scale: float = 0.1
 
 
+class CalibrationUIConfig(BaseModel):
+    """Calibration UI configuration"""
+    host: str = ""
+    port: int = 7860
+
+
 class SystemConfig(BaseModel):
     """Overall system configuration with YAML persistence support"""
     camera: CameraConfig = Field(default_factory=CameraConfig)
@@ -153,10 +182,9 @@ class SystemConfig(BaseModel):
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
     viser: ViserConfig = Field(default_factory=ViserConfig)
-
-    # UI settings
-    ui_host: str = "0.0.0.0"
-    ui_port: int = 7860
+    calibration_ui: CalibrationUIConfig = Field(
+        default_factory=CalibrationUIConfig
+    )
 
     @classmethod
     def from_yaml(cls, path: Path) -> "SystemConfig":
@@ -181,4 +209,5 @@ class SystemConfig(BaseModel):
             # Add a header comment
             f.write("# RGBTrack System Configuration\n")
             f.write("# This file is automatically managed by the application\n\n")
-            yaml.dump(self.model_dump(), f, default_flow_style=False, sort_keys=False, indent=2)
+            yaml.dump(self.model_dump(), f, default_flow_style=False,
+                      sort_keys=False, indent=2)

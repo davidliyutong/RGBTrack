@@ -147,9 +147,6 @@ detection:
   # Enable Kalman filter for pose smoothing and prediction
   use_kalman_filter: false
 
-  # Camera/video frame rate (frames per second)
-  fps: 30
-
   # Kalman filter tuning parameters
   # Process noise: uncertainty in system dynamics (higher = trust measurements more)
   kalman_process_noise: 0.01
@@ -168,10 +165,10 @@ zmq:
   # Network host address (used when transport is 'tcp')
   host: localhost
 
-  # Network port number (used when transport is 'tcp')
+  # Network port number for detection results channel (used when transport is 'tcp')
   port: 5555
 
-  # Unix socket file path (used when transport is 'ipc')
+  # Unix socket file path for detection results channel (used when transport is 'ipc')
   socket_path: /tmp/rgbtrack.sock
 
 # ============================================================================

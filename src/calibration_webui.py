@@ -21,7 +21,7 @@ from .calibration import (
 logger = logging.getLogger(__name__)
 
 
-class WebUI:
+class CalibrationWebUI:
     """
     Gradio-based web interface for camera configuration and control.
     Layout: Left column for configuration tabs, Right column for camera preview & control.
@@ -65,8 +65,8 @@ class WebUI:
 
         # Recording state
         self._recording = False
-        self._av_container: Optional[av.container.OutputContainer] = None
-        self._av_stream: Optional[av.video.stream.VideoStream] = None
+        self._av_container: Optional[av.container.OutputContainer] = None  # type: ignore
+        self._av_stream: Optional[av.video.stream.VideoStream] = None  # type: ignore
         self._record_frame_count = 0
         self._record_start_time = 0.0
         self._record_path: Optional[Path] = None
@@ -410,7 +410,7 @@ class WebUI:
                     h, w = self.last_frame.shape[:2]
                     timestamp = time.strftime("%Y%m%d_%H%M%S")
                     output_path = Path(f"recording_{timestamp}.mp4")
-                    fps = self.config.detection.fps
+                    fps = self.config.camera.fps
                     try:
                         container = av.open(str(output_path), mode='w')
                         stream = container.add_stream('h264', rate=fps)

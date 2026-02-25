@@ -12,7 +12,7 @@ import cv2
 
 from src.camera import CameraBase, create_camera
 from src.config import SystemConfig
-from src.webui import WebUI
+from src.calibration_webui import CalibrationWebUI
 
 # Default configuration file path
 DEFAULT_CONFIG_FILE = Path("config.yaml")
@@ -64,7 +64,7 @@ class RGBTrackApplication:
 
         # Components
         self.camera: Optional[CameraBase] = None
-        self.webui: WebUI | None = None
+        self.webui: CalibrationWebUI | None = None
 
         # State
         self._running = False
@@ -91,7 +91,7 @@ class RGBTrackApplication:
 
             # 2. Initialize Web UI
             logger.info("Initializing Web UI...")
-            self.webui = WebUI(
+            self.webui = CalibrationWebUI(
                 config=self.config,
                 calibration_config=self.config.calibration,
                 camera_cls=type(self.camera),
@@ -103,8 +103,8 @@ class RGBTrackApplication:
                 on_save_config=self._handle_save_config,
                 on_wb_calibrate=self._handle_wb_calibrate,
                 config_path=self.config_file,
-                host=self.config.ui_host,
-                port=self.config.ui_port
+                host=self.config.calibration_ui.host,
+                port=self.config.calibration_ui.port
             )
 
             logger.info("✓ All components initialized successfully")

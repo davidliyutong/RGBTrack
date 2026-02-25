@@ -1,399 +1,484 @@
-"""RGBTrack Inference Service - Main Entry Point"""
+"""RGBTrack inference service main entrypoint."""
+
+from __future__ import annotations
 
 import logging
 import signal
 import sys
-import time
 import threading
-from pathlib import Path
+import time
 from enum import Enum, auto
-from typing import Optional
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import numpy as np
+import cv2
 
+from src.camera import create_camera
+from src.camera_thread import CameraThread
 from src.config import SystemConfig
-from src.camera import CameraBase, create_camera
 from src.detection import DetectionAlgorithm, DetectionResult
+from src.viser_process import ViserProcess
+from src.zmq_common import (
+    CMD_PAUSE,
+    CMD_RESET,
+    CMD_RESUME,
+    CMD_SET_NMS_THRESHOLD,
+    CMD_SET_PROMPT,
+    CMD_START,
+    KEY_COMMAND,
+    KEY_MESSAGE,
+    KEY_NMS_THRESHOLD,
+    KEY_PAYLOAD,
+    KEY_PROMPT,
+    KEY_SUCCESS,
+    STATUS_DETECTING,
+    STATUS_IDLE,
+    STATUS_PAUSED,
+    STATUS_TRACKING,
+)
 from src.zmq_publisher import ZMQPublisher
-from src.viser_ui import ViserWebUI
 
-# Configure logging
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('rgbtrack_inference.log')
-    ]
+        logging.FileHandler("rgbtrack_inference.log"),
+    ],
 )
 
 logger = logging.getLogger(__name__)
 
 
 class TrackingState(Enum):
-    """Tracking state machine states"""
-    IDLE = auto()       # Waiting for user to start detection
-    DETECTING = auto()  # Running first-frame detection
-    TRACKING = auto()   # Actively tracking
-    PAUSED = auto()     # User paused tracking
+    """Tracking state machine states."""
+
+    IDLE = auto()
+    DETECTING = auto()
+    TRACKING = auto()
+    PAUSED = auto()
 
 
 class RGBTrackInferenceService:
-    """
-    Main RGBTrack inference service.
-    
-    Architecture:
-    - Main thread: Runs viser WebUI (blocking)
-    - Detection thread: Background frame processing loop
-    - Callbacks: UI buttons trigger state changes via thread-safe methods
-    """
-    
+    """RGBTrack inference service with camera, detection, ZMQ, and optional Viser."""
+
     def __init__(self, config: SystemConfig):
-        """
-        Initialize the inference service.
-        
-        Args:
-            config: System configuration
-        """
         self.config = config
         self.state = TrackingState.IDLE
         self._state_lock = threading.Lock()
-        
-        # Components
-        self.camera: Optional[CameraBase] = None
+
+        self.camera: Optional[CameraThread] = None
         self.detection: Optional[DetectionAlgorithm] = None
         self.zmq_pub: Optional[ZMQPublisher] = None
-        self.viser_ui: Optional[ViserWebUI] = None
-        
-        # State variables
+        self.viser_process: Optional[ViserProcess] = None
+
         self._running = False
         self._detection_thread: Optional[threading.Thread] = None
+        self._shutdown_in_progress = False
+        self._shutdown_lock = threading.Lock()
+
         self._current_pose: Optional[np.ndarray] = None
         self._current_mask: Optional[np.ndarray] = None
-        self._frame_count = 0
-        self._start_time = 0.0
-        self._fps = 0.0
-        
-        # Signal handling
+        self._frame_id = 0
+
+        self._use_viser = True
+        self._preview_enabled = False
+        self._preview_window_name = "RGBTrack Preview"
+
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-    
+
     def initialize(self) -> bool:
-        """
-        Initialize all components.
-        
-        Returns:
-            True if successful, False otherwise
-        """
+        """Initialize camera, detector, ZMQ, and optional Viser process."""
         try:
-            logger.info("Initializing RGBTrack inference service...")
-            
-            # 1. Initialize camera
-            logger.info("Initializing camera...")
-            self.camera = create_camera(
-                self.config.camera,
-                use_dummy=False  # Use real camera for inference
-            )
-            if not self.camera.open():
+            logger.info("Initializing RGBTrack inference service")
+
+            camera_instance = create_camera(self.config.camera, use_dummy=False)
+            if not camera_instance.open():
                 logger.error("Failed to open camera")
                 return False
-            logger.info("✓ Camera initialized")
-            
-            # 2. Initialize detection algorithm
-            logger.info("Initializing detection algorithm...")
+            self.camera = CameraThread(camera_instance)
+            self.camera.start()
+            logger.info("Camera initialized")
+
             self.detection = DetectionAlgorithm(
                 detection_config=self.config.detection,
-                calibration_config=self.config.calibration
+                calibration_config=self.config.calibration,
             )
             if not self.detection.initialize():
                 logger.error("Failed to initialize detection algorithm")
                 return False
-            logger.info("✓ Detection algorithm initialized")
-            
-            # 3. Initialize ZMQ publisher
-            logger.info("Initializing ZMQ publisher...")
+            logger.info("Detection algorithm initialized")
+
             self.zmq_pub = ZMQPublisher(self.config.zmq)
-            self.zmq_pub.start()
-            logger.info(f"✓ ZMQ publisher started on {self.config.zmq.address}")
-            
-            # 4. Initialize viser UI
-            logger.info("Initializing viser UI...")
-            self.viser_ui = ViserWebUI(
-                config=self.config,
-                detection=self.detection,
-                on_start_detection=self._handle_start_detection,
-                on_pause=self._handle_pause,
-                on_resume=self._handle_resume,
-                on_reset=self._handle_reset
+            self.zmq_pub.set_command_handler(self._handle_control_command)
+            self.zmq_pub.update_status(
+                status=self._state_to_string(TrackingState.IDLE),
+                prompt=self.config.detection.prompt,
+                nms_threshold=self.config.detection.nms_threshold,
             )
-            logger.info("✓ Viser UI initialized")
-            
-            logger.info("=" * 60)
-            logger.info("✓ All components initialized successfully")
-            logger.info("=" * 60)
+            self.zmq_pub.start()
+            logger.info("ZMQ service initialized")
+
+            if self._use_viser:
+                self.viser_process = ViserProcess(self.config)
+                self.viser_process.start()
+                logger.info("Viser process started with PID %s", self.viser_process.pid)
+
             return True
-            
-        except Exception as e:
-            logger.error(f"Initialization failed: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error("Initialization failed: %s", exc, exc_info=True)
             return False
-    
-    def start(self):
-        """Start the inference service"""
+
+    def start(self) -> None:
+        """Start background detection loop and hold main process."""
         if not self.initialize():
-            logger.error("Failed to initialize service")
             return
-        
+
         self._running = True
-        self._start_time = time.time()
-        
-        # Start detection thread
         self._detection_thread = threading.Thread(
             target=self._detection_loop,
             daemon=True,
-            name="detection_thread"
+            name="detection_thread",
         )
         self._detection_thread.start()
-        
-        logger.info("✓ Detection thread started")
-        logger.info("=" * 60)
-        logger.info("✓ Starting viser UI (blocking)...")
-        logger.info(f"  Viser UI: http://localhost:{self.config.viser.port}")
-        logger.info(f"  Gradio UI (calibration): http://localhost:{self.config.ui_port}")
-        logger.info("=" * 60)
-        
-        # Launch viser UI (blocks until closed)
+
+        logger.info("Service started")
+        last_stats_log_ts = 0.0
         try:
-            self.viser_ui.launch()
-        except Exception as e:
-            logger.error(f"Viser UI error: {e}", exc_info=True)
+            while self._running:
+                time.sleep(0.1)
+                now = time.time()
+                if self.camera is not None and now - last_stats_log_ts >= 2.0:
+                    logger.info("CameraThread stats: %s", self.camera.get_stats())
+                    last_stats_log_ts = now
+                if self.viser_process is not None and not self.viser_process.is_alive():
+                    logger.warning("Viser process exited unexpectedly")
+                    self.stop()
+                    break
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt received")
         finally:
             self.stop()
-    
-    def stop(self):
-        """Stop the service and cleanup resources"""
-        if not self._running:
+
+    def stop(self) -> None:
+        """Stop service and release resources."""
+        if not self._running and self._shutdown_in_progress:
             return
-        
-        logger.info("Stopping RGBTrack inference service...")
+
         self._running = False
-        
-        # Stop detection thread
+        logger.info("Stopping service")
+
         if self._detection_thread is not None:
             self._detection_thread.join(timeout=2.0)
-        
-        # Cleanup components
-        if self.camera is not None:
-            logger.info("Closing camera...")
-            self.camera.close()
-        
+
         if self.zmq_pub is not None:
-            logger.info("Stopping ZMQ publisher...")
             self.zmq_pub.stop()
-        
-        logger.info("=" * 60)
-        logger.info("✓ Service stopped")
-        logger.info("=" * 60)
-    
-    def _detection_loop(self):
-        """
-        Main detection/tracking loop (runs in background thread).
-        
-        State transitions:
-        IDLE → DETECTING: User triggers start_detection
-        DETECTING → TRACKING: Detection successful
-        TRACKING → PAUSED: User pauses
-        PAUSED → TRACKING: User resumes
-        TRACKING/PAUSED → IDLE: User resets
-        """
-        frame_id = 0
-        
+            self.zmq_pub = None
+
+        if self.viser_process is not None:
+            self.viser_process.terminate()
+            self.viser_process.join(timeout=3.0)
+            if self.viser_process.is_alive():
+                self.viser_process.kill()
+                self.viser_process.join(timeout=1.0)
+            self.viser_process = None
+
+        if self.camera is not None:
+            self.camera.stop(timeout=2.0)
+            self.camera.camera.close()
+            self.camera = None
+
+        if self._preview_enabled:
+            try:
+                cv2.destroyWindow(self._preview_window_name)
+                cv2.waitKey(1)
+            except Exception:
+                pass
+
+        logger.info("Service stopped")
+
+    def _detection_loop(self) -> None:
+        logger.info("Detection loop started")
         while self._running:
+            if self.camera is None or self.detection is None:
+                time.sleep(0.05)
+                continue
+
+            frame = self.camera.get_frame(timeout=0.05)
+            if frame is None:
+                frame = self.camera.get_latest_frame()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+
+            frame_data, frame_ts = frame
+
             with self._state_lock:
                 state = self.state
-            
+
+            self._show_preview(frame_data, state)
+
             if state == TrackingState.IDLE:
-                # Wait in idle state
-                time.sleep(0.1)
                 continue
-            
-            elif state == TrackingState.DETECTING:
-                # Capture single frame for detection
-                frame = self.camera.capture_frame()
-                if frame is None:
-                    logger.error("Failed to capture frame for detection")
-                    with self._state_lock:
-                        self.state = TrackingState.IDLE
-                    continue
-                
-                try:
-                    logger.info("Running first-frame detection...")
-                    t0 = time.time()
-                    
-                    mask = self.detection.detect_first_frame(frame)
-                    
-                    if mask is not None:
-                        pose = self.detection.current_pose
-                        self._current_pose = pose
-                        self._current_mask = mask
-                        
-                        # Publish result
-                        result = DetectionResult(
-                            timestamp=time.time(),
-                            frame_id=frame_id,
-                            pose=pose,
-                            processing_time_ms=(time.time() - t0) * 1000,
-                            frame_shape=frame.shape,
-                            camera_intrinsics=np.array(self.config.calibration.K),
-                            mask_png=None  # Can add mask encoding if needed
-                        )
-                        self.zmq_pub.publish(result)
-                        
-                        logger.info(f"✓ Detection successful, transitioning to TRACKING")
-                        with self._state_lock:
-                            self.state = TrackingState.TRACKING
-                    else:
-                        logger.error("Detection failed, no mask extracted")
-                        with self._state_lock:
-                            self.state = TrackingState.IDLE
-                    
-                except Exception as e:
-                    logger.error(f"Detection error: {e}", exc_info=True)
-                    with self._state_lock:
-                        self.state = TrackingState.IDLE
-            
-            elif state == TrackingState.TRACKING:
-                # Continuous tracking loop
-                t0 = time.time()
-                
-                frame = self.camera.capture_frame()
-                if frame is None:
-                    time.sleep(0.01)
-                    continue
-                
-                try:
-                    # Track object in frame
-                    pose = self.detection.track(frame)
-                    
-                    if pose is not None:
-                        self._current_pose = pose
-                        self._current_mask = self.detection.current_mask
-                        
-                        # Update frame count and FPS
-                        self._frame_count += 1
-                        elapsed = time.time() - self._start_time
-                        if elapsed > 0:
-                            self._fps = self._frame_count / elapsed
-                        
-                        # Publish result
-                        result = DetectionResult(
-                            timestamp=time.time(),
-                            frame_id=frame_id,
-                            pose=pose,
-                            processing_time_ms=(time.time() - t0) * 1000,
-                            frame_shape=frame.shape,
-                            camera_intrinsics=np.array(self.config.calibration.K),
-                            mask_png=None
-                        )
-                        self.zmq_pub.publish(result)
-                        
-                        # Update viser UI
-                        if self.viser_ui is not None:
-                            self.viser_ui.update_visualization(
-                                pose=pose,
-                                mask=self._current_mask,
-                                frame_shape=frame.shape,
-                                fps=self._fps,
-                                status="TRACKING"
-                            )
-                    
-                    frame_id += 1
-                    
-                except Exception as e:
-                    logger.error(f"Tracking error: {e}", exc_info=True)
-            
-            elif state == TrackingState.PAUSED:
-                # Paused state - just update UI with last known pose
-                if self.viser_ui is not None and self._current_pose is not None:
-                    current_frame = self.camera.capture_frame()
-                    frame_shape = current_frame.shape if current_frame is not None else (480, 640, 3)
-                    
-                    self.viser_ui.update_visualization(
-                        pose=self._current_pose,
-                        mask=self._current_mask,
-                        frame_shape=frame_shape,
-                        fps=self._fps,
-                        status="PAUSED"
-                    )
-                time.sleep(0.1)
-    
-    # User control callbacks (called from UI thread)
+
+            if state == TrackingState.PAUSED:
+                continue
+
+            if state == TrackingState.DETECTING:
+                self._run_detecting(frame_data, frame_ts)
+                continue
+
+            if state == TrackingState.TRACKING:
+                self._run_tracking(frame_data, frame_ts)
+
+        logger.info("Detection loop stopped")
+
+    def _show_preview(self, frame: np.ndarray, state: TrackingState) -> None:
+        if not self._preview_enabled:
+            return
+
+        try:
+            if frame.ndim != 3 or frame.shape[2] != 3:
+                return
+
+            preview = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            camera_fps = self.camera.camera.fps if self.camera is not None else 0.0
+            inference_fps = self.detection.fps if self.detection is not None else 0.0
+
+            cv2.putText(
+                preview,
+                f"State: {self._state_to_string(state)}",
+                (20, 32),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 255),
+                2,
+            )
+            cv2.putText(
+                preview,
+                f"Camera FPS: {camera_fps:.2f}",
+                (20, 62),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2,
+            )
+            cv2.putText(
+                preview,
+                f"Inference FPS: {inference_fps:.2f}",
+                (20, 92),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 0),
+                2,
+            )
+            cv2.putText(
+                preview,
+                "Press q / ESC to quit",
+                (20, 122),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                1,
+            )
+
+            cv2.imshow(self._preview_window_name, preview)
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):
+                logger.info("Preview window requested quit")
+                self._running = False
+        except Exception as exc:
+            logger.warning("OpenCV preview disabled due to error: %s", exc)
+            self._preview_enabled = False
+
+    def _run_detecting(self, frame: np.ndarray, frame_ts: int) -> None:
+        
+        if self.detection is None:
+            return
+        t0 = time.time_ns()
+        mask = self.detection.detect_first_frame(frame)
+        if mask is None:
+            logger.warning("First-frame detection failed")
+            with self._state_lock:
+                self.state = TrackingState.IDLE
+            self._update_pub_status()
+            return
+
+        pose = self.detection.current_pose
+        if pose is None:
+            with self._state_lock:
+                self.state = TrackingState.IDLE
+            self._update_pub_status()
+            return
+
+        self._current_pose = pose
+        self._current_mask = mask
+        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=pose, t0=t0)
+        self._publish_result(result=result, frame=frame)
+
+        with self._state_lock:
+            self.state = TrackingState.TRACKING
+        self._update_pub_status()
+
+    def _run_tracking(self, frame: np.ndarray, frame_ts: int) -> None:
+        if self.detection is None:
+            return
+        t0 = time.time_ns()
+        pose = self.detection.track(frame)
+        if pose is None:
+            return
+
+        self._current_pose = pose
+        self._current_mask = self.detection.current_mask
+        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=pose, t0=t0)
+        self._publish_result(result=result, frame=frame)
+        self._frame_id += 1
+
+    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int) -> DetectionResult:
+        camera_fps = self.camera.camera.fps if self.camera is not None else 0.0
+        inference_fps = self.detection.fps if self.detection is not None else 0.0
+        return DetectionResult(
+            timestamp=frame_ts,
+            frame_id=self._frame_id,
+            pose=pose,
+            processing_time_ms=(time.time_ns() - t0) / 1_000_000.0,
+            frame_shape=frame.shape,
+            camera_intrinsics=np.array(self.config.calibration.K, dtype=np.float64),
+            camera_fps=camera_fps,
+            inference_fps=inference_fps,
+            mask_png=None,
+        )
+
+    def _publish_result(self, result: DetectionResult, frame: np.ndarray) -> None:
+        if self.zmq_pub is None:
+            return
+        if self.zmq_pub.is_frame_buffer_enabled():
+            self.zmq_pub.publish_result(result=result, frame=frame)
+        else:
+            self.zmq_pub.publish_result(result=result, frame=None)
+
+    def _handle_control_command(self, command_msg: Dict[str, Any]) -> Dict[str, Any]:
+        command = command_msg.get(KEY_COMMAND)
+        payload = command_msg.get(KEY_PAYLOAD) or {}
+
+        if command == CMD_START:
+            ok = self._handle_start_detection()
+            return {KEY_SUCCESS: ok, KEY_MESSAGE: "started" if ok else "invalid state"}
+
+        if command == CMD_PAUSE:
+            ok = self._handle_pause()
+            return {KEY_SUCCESS: ok, KEY_MESSAGE: "paused" if ok else "invalid state"}
+
+        if command == CMD_RESUME:
+            ok = self._handle_resume()
+            return {KEY_SUCCESS: ok, KEY_MESSAGE: "resumed" if ok else "invalid state"}
+
+        if command == CMD_RESET:
+            ok = self._handle_reset()
+            return {KEY_SUCCESS: ok, KEY_MESSAGE: "reset" if ok else "reset failed"}
+
+        if command == CMD_SET_PROMPT:
+            prompt = payload.get(KEY_PROMPT, "")
+            self.config.detection.prompt = str(prompt)
+            if self.zmq_pub is not None:
+                self.zmq_pub.update_status(prompt=self.config.detection.prompt)
+            return {KEY_SUCCESS: True, KEY_MESSAGE: "prompt updated"}
+
+        if command == CMD_SET_NMS_THRESHOLD:
+            value = payload.get(KEY_NMS_THRESHOLD)
+            try:
+                if value is None:
+                    raise ValueError("nms_threshold is required")
+                nms = float(value)
+                self.config.detection.nms_threshold = nms
+                if self.zmq_pub is not None:
+                    self.zmq_pub.update_status(nms_threshold=nms)
+                return {KEY_SUCCESS: True, KEY_MESSAGE: "nms updated"}
+            except Exception:
+                return {KEY_SUCCESS: False, KEY_MESSAGE: "invalid nms_threshold"}
+
+        return {KEY_SUCCESS: False, KEY_MESSAGE: f"unknown command: {command}"}
+
     def _handle_start_detection(self) -> bool:
-        """User clicked 'Start Detection' button"""
         with self._state_lock:
-            if self.state == TrackingState.IDLE:
-                self.state = TrackingState.DETECTING
-                logger.info("→ State: DETECTING")
-                return True
-            else:
-                logger.warning(f"Cannot start detection in state {self.state}")
+            if self.state != TrackingState.IDLE:
                 return False
-    
-    def _handle_pause(self):
-        """User clicked 'Pause' button"""
+            self.state = TrackingState.DETECTING
+        self._update_pub_status()
+        return True
+
+    def _handle_pause(self) -> bool:
         with self._state_lock:
-            if self.state == TrackingState.TRACKING:
-                self.state = TrackingState.PAUSED
-                logger.info("→ State: PAUSED")
-    
-    def _handle_resume(self):
-        """User clicked 'Resume' button"""
+            if self.state != TrackingState.TRACKING:
+                return False
+            self.state = TrackingState.PAUSED
+        self._update_pub_status()
+        return True
+
+    def _handle_resume(self) -> bool:
         with self._state_lock:
-            if self.state == TrackingState.PAUSED:
-                self.state = TrackingState.TRACKING
-                logger.info("→ State: TRACKING")
-    
-    def _handle_reset(self):
-        """User clicked 'Reset' button"""
-        with self._state_lock:
-            logger.info("→ State: IDLE (reset)")
-            self.state = TrackingState.IDLE
+            if self.state != TrackingState.PAUSED:
+                return False
+            self.state = TrackingState.TRACKING
+        self._update_pub_status()
+        return True
+
+    def _handle_reset(self) -> bool:
+        try:
+            with self._state_lock:
+                self.state = TrackingState.IDLE
             self._current_pose = None
             self._current_mask = None
+            self._frame_id = 0
             if self.detection is not None:
                 self.detection.reset()
-    
-    def _signal_handler(self, sig, frame):
-        """Handle shutdown signals"""
-        logger.info(f"Received signal {sig}, initiating shutdown...")
+            self._update_pub_status()
+            return True
+        except Exception:
+            return False
+
+    def _update_pub_status(self) -> None:
+        if self.zmq_pub is None:
+            return
+        with self._state_lock:
+            status = self._state_to_string(self.state)
+        self.zmq_pub.update_status(status=status)
+
+    @staticmethod
+    def _state_to_string(state: TrackingState) -> str:
+        if state == TrackingState.DETECTING:
+            return STATUS_DETECTING
+        if state == TrackingState.TRACKING:
+            return STATUS_TRACKING
+        if state == TrackingState.PAUSED:
+            return STATUS_PAUSED
+        return STATUS_IDLE
+
+    def _signal_handler(self, sig, frame) -> None:
+        logger.info("Received signal %s, shutting down", sig)
+        with self._shutdown_lock:
+            if self._shutdown_in_progress:
+                return
+            self._shutdown_in_progress = True
         self.stop()
         sys.exit(0)
 
 
-def main():
-    """Main entry point"""
-    logger.info("=" * 60)
-    logger.info("RGBTrack Inference Service")
-    logger.info("=" * 60)
-    
-    # Load configuration
+def main() -> None:
+    """Main entrypoint."""
     config_path = Path("config.yaml")
     if not config_path.exists():
-        logger.error(f"Configuration file not found: {config_path}")
-        logger.info("Please run src/app.py first to generate configuration")
+        logger.error("Configuration file not found: %s", config_path)
         sys.exit(1)
-    
+
     config = SystemConfig.from_yaml(config_path)
-    logger.info(f"Loaded configuration from {config_path}")
-    
-    # Create and start service
     service = RGBTrackInferenceService(config)
-    
-    try:
-        service.start()
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
-        sys.exit(1)
+    service.start()
 
 
 if __name__ == "__main__":
     main()
+

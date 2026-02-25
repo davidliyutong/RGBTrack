@@ -51,7 +51,8 @@ class AprilTagBoardConfig:
         if family not in self.APRILTAG_FAMILIES:
             raise ValueError(f"Unknown AprilTag family: {family}")
 
-        self.aruco_dict = cv2.aruco.getPredefinedDictionary(self.APRILTAG_FAMILIES[family])
+        self.aruco_dict = cv2.aruco.getPredefinedDictionary(
+            self.APRILTAG_FAMILIES[family])
 
         # Create GridBoard for AprilTag
         self.board = cv2.aruco.GridBoard(  # type: ignore
@@ -59,7 +60,8 @@ class AprilTagBoardConfig:
             tag_size,
             tag_spacing,
             self.aruco_dict,
-            ids=np.arange(first_marker_id, first_marker_id + tags_x * tags_y).reshape(-1, 1)
+            ids=np.arange(first_marker_id, first_marker_id +
+                          tags_x * tags_y).reshape(-1, 1)
         )
         self.detector_params = cv2.aruco.DetectorParameters()
         self.object_points_3d = self._generate_object_points()
@@ -86,7 +88,8 @@ class AprilTagBoardConfig:
                 # 4 corners of the tag (counter-clockwise from bottom-left)
                 corners = np.array([
                     [center_x - half_size, center_y - half_size, 0],  # bottom-left
-                    [center_x + half_size, center_y - half_size, 0],  # bottom-right
+                    [center_x + half_size, center_y -
+                        half_size, 0],  # bottom-right
                     [center_x + half_size, center_y + half_size, 0],  # top-right
                     [center_x - half_size, center_y + half_size, 0],  # top-left
                 ], dtype=np.float32)
@@ -156,8 +159,10 @@ class CameraCalibrator:
         marker_ids = []
         for detection in detections:
             if detection.tag_id in self.board_config.object_points_3d:
-                object_points.append(self.board_config.object_points_3d[detection.tag_id])
-                marker_corners.append(np.array(detection.corners).reshape(4, 2))
+                object_points.append(
+                    self.board_config.object_points_3d[detection.tag_id])
+                marker_corners.append(
+                    np.array(detection.corners).reshape(4, 2))
                 marker_ids.append(detection.tag_id)
 
         # If at least one marker detected
@@ -175,10 +180,13 @@ class CameraCalibrator:
             # Convert marker_ids to numpy array for cv2.aruco.drawDetectedMarkers
             marker_ids_array = np.array(marker_ids).reshape(-1, 1)
             # Reshape marker_corners for drawDetectedMarkers (needs shape (1, 4, 2) for each marker)
-            marker_corners_for_draw = [c.reshape(1, 4, 2) for c in marker_corners]
-            cv2.aruco.drawDetectedMarkers(annotated, marker_corners_for_draw, marker_ids_array)
+            marker_corners_for_draw = [
+                c.reshape(1, 4, 2) for c in marker_corners]
+            cv2.aruco.drawDetectedMarkers(
+                annotated, marker_corners_for_draw, marker_ids_array)
 
-            logger.info(f"AprilTag board detected with {len(marker_ids)} markers")
+            logger.info(
+                f"AprilTag board detected with {len(marker_ids)} markers")
             return True, annotated
 
         logger.warning("Failed to detect AprilTag board")
@@ -223,20 +231,22 @@ class CameraCalibrator:
             return False, None, None, msg
 
         try:
-            logger.info(f"Running AprilTag calibration with {len(self.all_marker_corners)} images...")
+            logger.info(
+                f"Running AprilTag calibration with {len(self.all_marker_corners)} images...")
             # Perform calibration
             flags = 0
             flags |= cv2.CALIB_RATIONAL_MODEL  # Use rational distortion model
 
-            rms_error, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
+            rms_error, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(  # type: ignore
                 self.all_object_points,
                 self.all_marker_corners,
                 self.image_size,
-                None,
-                None,
+                None,  # type: ignore
+                None,  # type: ignore
                 flags=flags,
             )
-            dist_coeffs = dist_coeffs.flatten()[:5]  # Keep only k1, k2, p1, p2, k3
+            # Keep only k1, k2, p1, p2, k3
+            dist_coeffs = dist_coeffs.flatten()[:5]
 
             if camera_matrix is None or dist_coeffs is None:
                 msg = "Calibration failed - no camera matrix returned"
@@ -246,7 +256,8 @@ class CameraCalibrator:
             # RMS error is already computed by calibrateCamera
             msg = f"AprilTag calibration successful! RMS reprojection error: {rms_error:.4f} pixels"
             logger.info(msg)
-            logger.info(f"Number of images used: {len(self.all_marker_corners)}")
+            logger.info(
+                f"Number of images used: {len(self.all_marker_corners)}")
             logger.info(f"Camera matrix:\n{camera_matrix}")
             logger.info(f"Distortion coefficients: {dist_coeffs.ravel()}")
 
@@ -274,7 +285,8 @@ class CameraCalibrator:
             filename = output_dir / f"calib_{i:03d}.png"
             cv2.imwrite(str(filename), img)
 
-        logger.info(f"Saved {len(self.calibration_images)} images to {output_dir}")
+        logger.info(
+            f"Saved {len(self.calibration_images)} images to {output_dir}")
         return len(self.calibration_images)
 
     def load_images(self, image_dir: Path) -> Tuple[int, int]:
@@ -311,7 +323,8 @@ class CameraCalibrator:
             except Exception as e:
                 logger.warning(f"Failed to load {img_path}: {e}")
 
-        logger.info(f"Loaded {total_loaded} images, detected board in {successfully_detected}")
+        logger.info(
+            f"Loaded {total_loaded} images, detected board in {successfully_detected}")
         return total_loaded, successfully_detected
 
 
@@ -334,8 +347,10 @@ def generate_apriltag_board(
     try:
         # Calculate board size in mm
         board_size_mm = (
-            board_config.tags_x * (board_config.tag_size + board_config.tag_spacing) * 1000,
-            board_config.tags_y * (board_config.tag_size + board_config.tag_spacing) * 1000
+            board_config.tags_x *
+            (board_config.tag_size + board_config.tag_spacing) * 1000,
+            board_config.tags_y *
+            (board_config.tag_size + board_config.tag_spacing) * 1000
         )
 
         # Calculate pixels needed

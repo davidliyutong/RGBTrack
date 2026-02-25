@@ -1,9 +1,11 @@
 """Camera abstraction layer for MindVision SDK or other camera systems"""
 
+import mvsdk
 import logging
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections import deque
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
@@ -25,6 +27,26 @@ class CameraBase(ABC):
         self._master_lock = threading.Lock()
         self._config_lock = threading.Lock()
         self._is_open = False
+
+        # FPS tracking
+        self._frame_timestamps: deque = deque(maxlen=5)
+        self._fps_lock = threading.Lock()
+
+    @property
+    def fps(self) -> float:
+        """Get current camera FPS (averaged over last 5 frames)"""
+        with self._fps_lock:
+            if len(self._frame_timestamps) < 2:
+                return 0.0
+            dt = self._frame_timestamps[-1] - self._frame_timestamps[0]
+            if dt > 0:
+                return (len(self._frame_timestamps) - 1) / dt
+            return 0.0
+
+    def _record_frame_capture(self):
+        """Record timestamp for FPS calculation (call after successful capture)"""
+        with self._fps_lock:
+            self._frame_timestamps.append(time.time())
 
     @staticmethod
     @abstractmethod
@@ -85,9 +107,6 @@ class CameraBase(ABC):
     def is_open(self) -> bool:
         """Check if camera is open"""
         return self._is_open
-
-
-import mvsdk
 
 
 class MindVisionCamera(CameraBase):
@@ -205,6 +224,10 @@ class MindVisionCamera(CameraBase):
             mvsdk.CameraReleaseImageBuffer(self.camera_handle, pRawData)
             frame = (mvsdk.c_ubyte * FrameHead.uBytes).from_address(self.p_frame_buffer)
             frame = np.frombuffer(frame, dtype=np.uint8).reshape((FrameHead.iHeight, FrameHead.iWidth, 3))  # FIXME: hardcoded to 3 channels
+
+            # Record FPS
+            self._record_frame_capture()
+
             return frame
         except Exception as e:
             logger.error(f"Failed to capture frame: {e}")
@@ -429,6 +452,9 @@ class DummyCamera(CameraBase):
         # Simulate camera capture time
         time.sleep(0.01 if self.config.mode == "high_speed" else 0.03)
 
+        # Record FPS
+        self._record_frame_capture()
+
         return frame
 
     def set_exposure(self, exposure_ms: int):
@@ -512,8 +538,8 @@ class VideoFileCamera(CameraBase):
 
     def __init__(self, config: CameraConfig):
         super().__init__(config)
-        self.container: Optional[av.container.InputContainer] = None
-        self.video_stream: Optional[av.video.stream.VideoStream] = None
+        self.container: Optional[av.container.InputContainer] = None  # type: ignore
+        self.video_stream: Optional[av.video.stream.VideoStream] = None  # type: ignore
         self.frame_iterator = None
         self.current_frame_idx = 0
         self.loop_video = True  # Loop the video when it reaches the end
@@ -541,18 +567,18 @@ class VideoFileCamera(CameraBase):
 
                 # Open video container
                 self.container = av.open(self.file_path)
-                self.video_stream = self.container.streams.video[0]
+                self.video_stream = self.container.streams.video[0]  # type: ignore
 
                 # Auto-fill width and height from video properties
-                self.config.width = self.video_stream.width
-                self.config.height = self.video_stream.height
+                self.config.width = self.video_stream.width  # type: ignore
+                self.config.height = self.video_stream.height  # type: ignore
 
                 logger.info(f"Video opened: {self.config.width}x{self.config.height}, "
-                            f"fps={self.video_stream.average_rate}, "
-                            f"frames={self.video_stream.frames}")
+                            f"fps={self.video_stream.average_rate}, "  # type: ignore
+                            f"frames={self.video_stream.frames}")  # type: ignore
 
                 # Create frame iterator
-                self.frame_iterator = self.container.decode(video=0)
+                self.frame_iterator = self.container.decode(video=0)  # type: ignore
 
                 self._is_open = True
                 return True
@@ -588,14 +614,18 @@ class VideoFileCamera(CameraBase):
             img = frame.to_ndarray(format='rgb24')
 
             self.current_frame_idx += 1
+
+            # Record FPS
+            self._record_frame_capture()
+
             return img
 
         except StopIteration:
             # Video ended, loop back to start if enabled
             if self.loop_video:
                 logger.info("Video ended, looping back to start")
-                self.container.seek(0)
-                self.frame_iterator = self.container.decode(video=0)
+                self.container.seek(0)  # type: ignore
+                self.frame_iterator = self.container.decode(video=0)  # type: ignore
                 self.current_frame_idx = 0
                 return self.capture_frame()
             else:

@@ -15,17 +15,17 @@ echo "[INFO] Workspace: ${WORKSPACE_DIR}"
 echo "[INFO] Target conda env: ${ENV_NAME} (python=${PYTHON_VERSION})"
 
 if ! command -v conda >/dev/null 2>&1; then
-	echo "[ERROR] conda not found. Please install Miniconda/Anaconda first."
-	exit 1
+    echo "[ERROR] conda not found. Please install Miniconda/Anaconda first."
+    exit 1
 fi
 
 eval "$(conda shell.bash hook)"
 
 if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
-	echo "[INFO] Conda environment '${ENV_NAME}' already exists. Reusing it."
+    echo "[INFO] Conda environment '${ENV_NAME}' already exists. Reusing it."
 else
-	echo "[INFO] Creating conda environment '${ENV_NAME}'..."
-	conda create -y -n "${ENV_NAME}" "python=${PYTHON_VERSION}"
+    echo "[INFO] Creating conda environment '${ENV_NAME}'..."
+    conda create -y -n "${ENV_NAME}" "python=${PYTHON_VERSION}"
 fi
 
 conda activate "${ENV_NAME}"
@@ -43,56 +43,56 @@ echo "[INFO] Installing NVDiffRast..."
 python -m pip install --quiet --no-cache-dir --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git
 
 if [[ "${INSTALL_KAOLIN}" == "1" ]]; then
-	echo "[INFO] Installing Kaolin..."
-	python -m pip install --quiet --no-cache-dir kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.7.0_cu128.html
+    echo "[INFO] Installing Kaolin..."
+    python -m pip install --quiet --no-cache-dir kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.7.0_cu128.html
 else
-	echo "[INFO] Skipping Kaolin (INSTALL_KAOLIN=0)."
+    echo "[INFO] Skipping Kaolin (INSTALL_KAOLIN=0)."
 fi
 
 if [[ "${INSTALL_PYTORCH3D}" == "1" ]]; then
-	echo "[INFO] Installing PyTorch3D from source ..."
-	python -m pip install --quiet --no-index --no-cache-dir --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git"
+    echo "[INFO] Installing PyTorch3D from source ..."
+    python -m pip install --quiet --no-index --no-cache-dir --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git"
 else
-	echo "[INFO] Skipping PyTorch3D (INSTALL_PYTORCH3D=0)."
+    echo "[INFO] Skipping PyTorch3D (INSTALL_PYTORCH3D=0)."
 fi
 
 if [[ -d "${SAM2_DIR}" ]]; then
-	echo "[INFO] Installing SAM2 from local checkout: ${SAM2_DIR}"
-	python -m pip install -e "${SAM2_DIR}"
+    echo "[INFO] Installing SAM2 from local checkout: ${SAM2_DIR}"
+    python -m pip install -e "${SAM2_DIR}"
 
-	if [[ "${DOWNLOAD_SAM2_CKPT}" == "1" ]]; then
-		if [[ -x "${SAM2_DIR}/checkpoints/download_ckpts.sh" ]]; then
-			echo "[INFO] Downloading SAM2 checkpoints..."
-			(
-				cd "${SAM2_DIR}/checkpoints"
-				./download_ckpts.sh
-			)
-		else
-			echo "[WARN] SAM2 checkpoint downloader not executable: ${SAM2_DIR}/checkpoints/download_ckpts.sh"
-		fi
-	fi
+    if [[ "${DOWNLOAD_SAM2_CKPT}" == "1" ]]; then
+        if [[ -x "${SAM2_DIR}/checkpoints/download_ckpts.sh" ]]; then
+            echo "[INFO] Downloading SAM2 checkpoints..."
+            (
+                cd "${SAM2_DIR}/checkpoints"
+                ./download_ckpts.sh
+            )
+        else
+            echo "[WARN] SAM2 checkpoint downloader not executable: ${SAM2_DIR}/checkpoints/download_ckpts.sh"
+        fi
+    fi
 else
-	echo "[ERROR] SAM2 directory not found: ${SAM2_DIR}"
-	echo "        Please ensure 'segment-anything-2-real-time' is checked out in workspace."
-	exit 1
+    echo "[ERROR] SAM2 directory not found: ${SAM2_DIR}"
+    echo "        Please ensure 'segment-anything-2-real-time' is checked out in workspace."
+    exit 1
 fi
 
 if [[ -d "${WORKSPACE_DIR}/bop_toolkit" ]]; then
-	echo "[INFO] Installing BOP Toolkit from local checkout..."
-	python -m pip install -e "${WORKSPACE_DIR}/bop_toolkit"
+    echo "[INFO] Installing BOP Toolkit from local checkout..."
+    python -m pip install -e "${WORKSPACE_DIR}/bop_toolkit"
 else
-	echo "[WARN] BOP Toolkit directory not found: ${WORKSPACE_DIR}/bop_toolkit"
+    echo "[WARN] BOP Toolkit directory not found: ${WORKSPACE_DIR}/bop_toolkit"
 fi
 
 echo "[INFO] Building FoundationPose extensions (conda mode)..."
 CMAKE_PREFIX_PATH="${CONDA_PREFIX}/lib/python${PYTHON_VERSION}/site-packages/pybind11/share/cmake/pybind11" \
-	bash "${WORKSPACE_DIR}/build_all_conda.sh"
+    bash "${WORKSPACE_DIR}/build_all_conda.sh"
 
 # TensorRT
 echo "[INFO] Installing TensorRT (CUDA 12)..."
 if ! python -m pip install --quiet --no-cache-dir --extra-index-url https://pypi.nvidia.com tensorrt-cu12; then
-	echo "[WARN] tensorrt-cu12 install failed, trying legacy nvidia-tensorrt package..."
-	python -m pip install --quiet --no-cache-dir --extra-index-url https://pypi.nvidia.com nvidia-tensorrt
+    echo "[WARN] tensorrt-cu12 install failed, trying legacy nvidia-tensorrt package..."
+    python -m pip install --quiet --no-cache-dir --extra-index-url https://pypi.nvidia.com nvidia-tensorrt
 fi
 
 # Filterpy
