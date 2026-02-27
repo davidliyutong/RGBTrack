@@ -38,13 +38,14 @@ class DetectionResult:
     # NEW: FPS metrics
     camera_fps: float = 0.0
     inference_fps: float = 0.0
-
     # Camera pose in world frame (4x4)
     camera_pose: Optional[np.ndarray] = None
     # Camera intrinsics matrix (3x3)
     camera_intrinsics: Optional[np.ndarray] = None
     preview_jpeg: Optional[bytes] = None  # JPEG-encoded RGB preview for viewer
     mask_png: Optional[bytes] = None  # PNG-encoded mask for viewer/debug
+
+    valid: bool = True
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization"""

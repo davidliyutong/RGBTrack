@@ -222,6 +222,7 @@ class RGBTrackInferenceService:
             self._show_preview(frame_data, state)
 
             if state == TrackingState.IDLE:
+                self._run_idle(frame_data, frame_ts)
                 continue
 
             if state == TrackingState.PAUSED:
@@ -294,6 +295,13 @@ class RGBTrackInferenceService:
             logger.warning("OpenCV preview disabled due to error: %s", exc)
             self._preview_enabled = False
 
+    def _run_idle(self, frame: np.ndarray, frame_ts: int) -> None:
+        """Publish dummy data in the same format when idle."""
+        t0 = time.time_ns()
+        dummy_pose = np.eye(4, dtype=np.float64)
+        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=dummy_pose, t0=t0, valid=False)
+        self._publish_result(result=result, frame=frame)
+
     def _run_detecting(self, frame: np.ndarray, frame_ts: int) -> None:
 
         if self.detection is None:
@@ -337,7 +345,7 @@ class RGBTrackInferenceService:
         self._publish_result(result=result, frame=frame)
         self._frame_id += 1
 
-    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int) -> DetectionResult:
+    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int, valid: bool=True) -> DetectionResult:
         camera_fps = self.camera.camera.fps if self.camera is not None else 0.0
         inference_fps = self.detection.fps if self.detection is not None else 0.0
         return DetectionResult(
@@ -350,6 +358,7 @@ class RGBTrackInferenceService:
             camera_fps=camera_fps,
             inference_fps=inference_fps,
             mask_png=None,
+            valid=valid,
         )
 
     def _publish_result(self, result: DetectionResult, frame: np.ndarray) -> None:
