@@ -43,7 +43,7 @@ class ViserInterface:
 
         self._update_thread: Optional[threading.Thread] = None
         self._latest_pose: Optional[np.ndarray] = None
-        self._camera_to_world = np.array(self.config.calibration.extrinsic_matrix, dtype=np.float64)
+        self._camera_to_robot = np.array(self.config.calibration.extrinsic_matrix, dtype=np.float64)
         self._camera_frustum = None
         self._object_mesh_handle = None
         self._last_status_poll_ts = 0.0
@@ -58,19 +58,19 @@ class ViserInterface:
         return float(fov), float(aspect)
 
     def _camera_pose_from_config(self) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
-        pose = self._camera_to_world
+        pose = self._camera_to_robot
         position = tuple(pose[:3, 3].tolist())
         wxyz = (1.0, 0.0, 0.0, 0.0)
         try:
             import viser.transforms as tf
-
             wxyz = tuple(tf.SO3.from_matrix(pose[:3, :3]).wxyz)
         except Exception:
             pass
+        print(f"==========\npose={pose}\nposition={position}\nwxyz={wxyz}\n==========")
         return position, wxyz
 
     def _set_object_pose_from_camera_pose(self, pose_camera: np.ndarray) -> None:
-        pose_world = self._camera_to_world @ pose_camera
+        pose_world = self._camera_to_robot @ pose_camera
         self.object_frame.position = tuple(pose_world[:3, 3].tolist())
         try:
             import viser.transforms as tf

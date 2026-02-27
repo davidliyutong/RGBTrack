@@ -87,6 +87,9 @@ class RGBTrackInferenceService:
         self._preview_enabled = False
         self._preview_window_name = "RGBTrack Preview"
 
+        self.camera_intrinsics = np.array(self.config.calibration.K, dtype=np.float32)
+        self.camera_distortion = np.array(self.config.calibration.dist_coef, dtype=np.float32)
+
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -213,8 +216,10 @@ class RGBTrackInferenceService:
             if frame is None:
                 time.sleep(0.01)
                 continue
-
             frame_data, frame_ts = frame
+
+            if self.config.camera.undistort:
+                frame_data = cv2.undistort(frame_data, self.camera_intrinsics, self.camera_distortion)
 
             with self._state_lock:
                 state = self.state
@@ -351,7 +356,7 @@ class RGBTrackInferenceService:
         self._publish_result(result=result, frame=frame)
         self._frame_id += 1
 
-    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int, linvel: np.ndarray, angvel: np.ndarray, valid: bool=True) -> DetectionResult:
+    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int, linvel: np.ndarray, angvel: np.ndarray, valid: bool = True) -> DetectionResult:
         camera_fps = self.camera.camera.fps if self.camera is not None else 0.0
         inference_fps = self.detection.fps if self.detection is not None else 0.0
         return DetectionResult(

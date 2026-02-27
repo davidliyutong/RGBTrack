@@ -55,6 +55,8 @@ class DetectionResult:
             'timestamp': self.timestamp,
             'frame_id': self.frame_id,
             'pose': self.pose.tolist(),
+            'linvel': self.linvel.tolist() if self.linvel is not None else None,
+            'angvel': self.angvel.tolist() if self.angvel is not None else None,
             'processing_time_ms': self.processing_time_ms,
             'frame_shape': self.frame_shape,
             # NEW: FPS metrics
