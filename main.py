@@ -295,7 +295,7 @@ class RGBTrackInferenceService:
             self._preview_enabled = False
 
     def _run_detecting(self, frame: np.ndarray, frame_ts: int) -> None:
-        
+
         if self.detection is None:
             return
         t0 = time.time_ns()
@@ -481,4 +481,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

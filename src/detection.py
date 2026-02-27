@@ -2,6 +2,7 @@
 
 import os
 import sys
+import gc
 import logging
 import threading
 import time
@@ -139,11 +140,20 @@ class DetectionAlgorithm:
         self.mesh = None
         self.estimator: Optional[FoundationPose] = None
         self.glctx = None
+        self._sam2_model_loaded = False
 
         # State
         self._current_pose: Optional[np.ndarray] = None
         self._current_mask: Optional[np.ndarray] = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Inference resolution limits (separate for detect vs track)
+        self._detect_max_shorter_side: int = getattr(
+            detection_config, 'detect_max_shorter_side', 480
+        ) or 0
+        self._track_max_shorter_side: int = getattr(
+            detection_config, 'track_max_shorter_side', 0
+        ) or 0
 
         # NEW: FPS tracking
         self._inference_timestamps: deque = deque(maxlen=5)
@@ -186,39 +196,6 @@ class DetectionAlgorithm:
             logger.info(f"Loading mesh from {self.config.mesh_path}")
             self.mesh = trimesh.load(self.config.mesh_path)
 
-            # Load SAM2 model
-            logger.info("Loading SAM2 model...")
-            code_dir = os.path.dirname(
-                os.path.dirname(os.path.realpath(__file__)))
-            sam2_repo = os.path.join(code_dir, "segment-anything-2-real-time")
-
-            # Auto-select config based on checkpoint name
-            cfg_rel = self.config.sam2_cfg
-            ckpt_name = os.path.basename(self.config.sam2_checkpoint).lower()
-            if "sam2.1" in ckpt_name:
-                if "tiny" in ckpt_name:
-                    cfg_rel = "configs/sam2.1/sam2.1_hiera_t.yaml"
-                elif "small" in ckpt_name:
-                    cfg_rel = "configs/sam2.1/sam2.1_hiera_s.yaml"
-                elif "base_plus" in ckpt_name or "b_plus" in ckpt_name:
-                    cfg_rel = "configs/sam2.1/sam2.1_hiera_b+.yaml"
-                elif "large" in ckpt_name:
-                    cfg_rel = "configs/sam2.1/sam2.1_hiera_l.yaml"
-
-            self.sam2_model = build_sam2_model(
-                sam2_repo=sam2_repo,
-                sam2_checkpoint=self.config.sam2_checkpoint,
-                device=self._device,
-                cfg_rel=cfg_rel
-            )
-            logger.info("✓ SAM2 model loaded")
-
-            # Load CLIP
-            logger.info("Loading CLIP model...")
-            self.clip_model, self.clip_preprocess, self.clip = load_clip(
-                self._device)
-            logger.info("✓ CLIP model loaded")
-
             # Initialize FoundationPose
             logger.info("Initializing FoundationPose...")
             self.glctx = dr.RasterizeCudaContext()
@@ -235,6 +212,15 @@ class DetectionAlgorithm:
             )
             logger.info("✓ FoundationPose initialized")
 
+            # Keep CLIP resident for fast restart/re-detection.
+            logger.info("Loading CLIP model...")
+            self.clip_model, self.clip_preprocess, self.clip = load_clip(self._device)
+            logger.info("✓ CLIP model loaded")
+
+            # Keep SAM2 resident for fast restart/re-detection.
+            self._load_first_frame_models()
+            self._log_cuda_memory("after FoundationPose init")
+
             self._initialized = True
             logger.info("✓ Detection algorithm initialized successfully")
             return True
@@ -243,6 +229,106 @@ class DetectionAlgorithm:
             logger.error(
                 f"Failed to initialize detection algorithm: {e}", exc_info=True)
             return False
+
+    def _load_first_frame_models(self) -> None:
+        if self._sam2_model_loaded:
+            return
+
+        logger.info("Loading first-frame model (SAM2)...")
+        code_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        sam2_repo = os.path.join(code_dir, "segment-anything-2-real-time")
+
+        cfg_rel = self.config.sam2_cfg
+        ckpt_name = os.path.basename(self.config.sam2_checkpoint).lower()
+        if "sam2.1" in ckpt_name:
+            if "tiny" in ckpt_name:
+                cfg_rel = "configs/sam2.1/sam2.1_hiera_t.yaml"
+            elif "small" in ckpt_name:
+                cfg_rel = "configs/sam2.1/sam2.1_hiera_s.yaml"
+            elif "base_plus" in ckpt_name or "b_plus" in ckpt_name:
+                cfg_rel = "configs/sam2.1/sam2.1_hiera_b+.yaml"
+            elif "large" in ckpt_name:
+                cfg_rel = "configs/sam2.1/sam2.1_hiera_l.yaml"
+
+        self.sam2_model = build_sam2_model(
+            sam2_repo=sam2_repo,
+            sam2_checkpoint=self.config.sam2_checkpoint,
+            device=self._device,
+            cfg_rel=cfg_rel,
+        )
+        self._sam2_model_loaded = True
+        self._log_cuda_memory("after loading SAM2")
+
+    def _unload_first_frame_models(self) -> None:
+        if not self._sam2_model_loaded:
+            return
+
+        logger.info("Unloading first-frame model (SAM2) to reduce CUDA usage")
+        self.sam2_model = None
+        self._sam2_model_loaded = False
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        self._log_cuda_memory("after unloading SAM2")
+
+    # ---- resolution helpers ------------------------------------------------
+    def _resize_for_inference(
+        self, frame: np.ndarray, K: np.ndarray,
+        mask: Optional[np.ndarray] = None,
+        max_shorter_side: int = 0,
+    ) -> tuple:
+        """Downscale *frame* (and optionally *mask*) so the shorter side
+        is <= *max_shorter_side*.  Returns ``(frame, K, mask, scale)``.
+        *scale* is the factor applied (1.0 = no resize).
+        K is adjusted in-place-safe (a copy is returned)."""
+        if max_shorter_side <= 0:
+            return frame, K.copy(), mask, 1.0
+        h, w = frame.shape[:2]
+        shorter = min(h, w)
+        if shorter <= max_shorter_side:
+            return frame, K.copy(), mask, 1.0
+        scale = max_shorter_side / shorter
+        new_w, new_h = int(w * scale + 0.5), int(h * scale + 0.5)
+        frame_s = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        K_s = K.copy()
+        K_s[0, :] *= scale
+        K_s[1, :] *= scale
+        mask_s = None
+        if mask is not None:
+            mask_s = cv2.resize(
+                mask.astype(np.uint8), (new_w, new_h),
+                interpolation=cv2.INTER_NEAREST
+            ).astype(mask.dtype)
+        logger.info(
+            "Resized frame %dx%d -> %dx%d (scale %.3f) for inference",
+            w, h, new_w, new_h, scale,
+        )
+        return frame_s, K_s, mask_s, scale
+
+    @staticmethod
+    def _upscale_mask(mask: np.ndarray, orig_hw: tuple, scale: float) -> np.ndarray:
+        """Upscale a binary mask back to original resolution."""
+        if scale >= 1.0:
+            return mask
+        return cv2.resize(
+            mask, (orig_hw[1], orig_hw[0]),
+            interpolation=cv2.INTER_NEAREST
+        )
+
+    def _log_cuda_memory(self, stage: str) -> None:
+        if not torch.cuda.is_available():
+            return
+        try:
+            allocated = torch.cuda.memory_allocated() / (1024 ** 2)
+            reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+            logger.info(
+                "CUDA memory (%s): allocated=%.1fMB reserved=%.1fMB",
+                stage,
+                allocated,
+                reserved,
+            )
+        except Exception:
+            pass
 
     def rank_masks_by_prompt(self, image_rgb: np.ndarray, masks: List[dict], prompt: str, device: str) -> tuple[np.ndarray, float]:
         """
@@ -325,6 +411,10 @@ class DetectionAlgorithm:
         try:
             logger.info("Running first-frame detection...")
             t0 = time.time()
+            self._load_first_frame_models()
+
+            orig_hw = frame.shape[:2]
+            K_orig = np.array(self.calibration_config.K, dtype=np.float64)
 
             # Generate masks with SAM2 (matching generate_image_marker.py)
             masks = generate_masks_with_sam2(frame, self.sam2_model)
@@ -343,19 +433,25 @@ class DetectionAlgorithm:
             # Convert mask to boolean
             mask_bool = (best_mask > 0).astype(bool)
 
+            # Downscale for FoundationPose to avoid GPU OOM on high-res frames
+            frame_s, K_s, mask_s, scale = self._resize_for_inference(
+                frame, K_orig, mask_bool,
+                max_shorter_side=self._detect_max_shorter_side,
+            )
+
             # Use binary_search_depth to find initial pose (matching test_demo_without_depth.py line 98)
             logger.info("Running binary_search_depth for initial pose...")
             pose = binary_search_depth(
                 est=self.estimator,
                 mesh=self.mesh,
-                rgb=frame,
-                mask=mask_bool,
-                K=np.array(self.calibration_config.K, dtype=np.float64),
+                rgb=frame_s,
+                mask=mask_s,
+                K=K_s,
                 debug=False
             )
 
             self._current_pose = pose
-            self._current_mask = best_mask
+            self._current_mask = best_mask  # keep at original resolution
 
             # Record inference completion
             self._record_inference(t0)
@@ -391,21 +487,28 @@ class DetectionAlgorithm:
         try:
             t0 = time.time()
 
+            K_orig = np.array(self.calibration_config.K, dtype=np.float64)
+
+            # Optionally downscale for tracking (default 0 = full resolution)
+            frame_t, K_t, _, _ = self._resize_for_inference(
+                frame, K_orig,
+                max_shorter_side=self._track_max_shorter_side,
+            )
+
             # Render CAD depth from current pose (matching test_demo_without_depth.py line 113)
-            K = np.array(self.calibration_config.K, dtype=np.float64)
             depth = render_cad_depth(
                 pose=self._current_pose,
                 mesh_model=self.mesh,
-                K=K,
-                w=frame.shape[1],
-                h=frame.shape[0]
+                K=K_t,
+                w=frame_t.shape[1],
+                h=frame_t.shape[0]
             )
 
             # Track with rendered depth (matching test_demo_without_depth.py line 115)
             pose = self.estimator.track_one(  # type: ignore
-                rgb=frame,
+                rgb=frame_t,
                 depth=depth,
-                K=K,
+                K=K_t,
                 iteration=self.config.track_refine_iter
             )
 

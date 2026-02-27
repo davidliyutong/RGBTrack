@@ -1,4 +1,11 @@
+SHELL := /bin/bash
+.ONESHELL:
+
 calibrate:
-	python calibrate.py
+	source ~/miniconda3/etc/profile.d/conda.sh
+	conda activate RGBTrack
+	python -u calibrate.py
 up:
-	python main.py
+	source ~/miniconda3/etc/profile.d/conda.sh
+	conda activate RGBTrack
+	python -u main.py

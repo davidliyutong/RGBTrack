@@ -104,7 +104,7 @@ if __name__ == "__main__":
             #     iteration=args.est_refine_iter,
             # )
             logging.info(f"Initial pose:\n{pose}")
-        
+
             t2=time.time()
         else:
             t1=time.time()

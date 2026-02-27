@@ -106,6 +106,20 @@ class DetectionConfig(BaseModel):
     sam2_checkpoint: str = "checkpoints/sam2.1_hiera_tiny.pt"
     track_refine_iter: int = 5
 
+    # Max shorter-side resolution for FoundationPose first-frame detection
+    # (register / binary_search_depth processes ~252 pose hypotheses).
+    # Set to 0 to disable downscaling.
+    detect_max_shorter_side: int = Field(
+        default=480,
+        description="Downscale frames so shorter side <= this during detection")
+
+    # Max shorter-side resolution for FoundationPose per-frame tracking
+    # (track_one processes only 1 pose, so higher res is usually fine).
+    # Set to 0 to disable downscaling (use full camera resolution).
+    track_max_shorter_side: int = Field(
+        default=0,
+        description="Downscale frames so shorter side <= this during tracking (0 = full res)")
+
     # Kalman filter settings for pose smoothing
     use_kalman_filter: bool = Field(
         default=False, description="Enable Kalman filter for pose smoothing")

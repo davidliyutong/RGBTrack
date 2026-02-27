@@ -144,6 +144,16 @@ detection:
   # Number of refinement iterations for tracking
   track_refine_iter: 5
 
+  # Max shorter-side resolution for FoundationPose first-frame detection
+  # (register / binary_search_depth processes ~252 pose hypotheses).
+  # Set to 0 to disable downscaling.
+  detect_max_shorter_side: 480
+
+  # Max shorter-side resolution for FoundationPose per-frame tracking
+  # (track_one processes only 1 pose, so higher res is usually fine).
+  # Set to 0 to disable downscaling (use full camera resolution).
+  track_max_shorter_side: 0
+
   # Enable Kalman filter for pose smoothing and prediction
   use_kalman_filter: false
 
@@ -168,8 +178,18 @@ zmq:
   # Network port number for detection results channel (used when transport is 'tcp')
   port: 5555
 
+  # Network port number for control commands channel (used when transport is 'tcp')
+  control_port: 5556
+
   # Unix socket file path for detection results channel (used when transport is 'ipc')
   socket_path: /tmp/rgbtrack.sock
+
+  # Unix socket file path for control commands channel (used when transport is 'ipc')
+  control_socket_path: /tmp/rgbtrack_control.sock
+
+  # 0 means publish as fast as new results arrive
+  # >0 means fixed interval publish (repeat latest payload when needed)
+  publish_interval_ms: 0
 
 # ============================================================================
 # Viser 3D Visualization Configuration
@@ -200,7 +220,7 @@ viser:
 # Settings for the Gradio-based calibration web interface
 calibration_ui:
   # Host address for calibration UI (0.0.0.0 allows external connections)
-  host: 0.0.0.0
+  host: ""
 
   # Port number for calibration UI
   port: 7860
