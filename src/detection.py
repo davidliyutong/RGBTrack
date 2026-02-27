@@ -32,6 +32,8 @@ class DetectionResult:
     timestamp: int
     frame_id: int
     pose: np.ndarray  # Object pose in camera frame (4x4)
+    linvel: np.ndarray  # Linear velocity (3,)
+    angvel: np.ndarray  # Angular velocity (3,)
     processing_time_ms: float
     frame_shape: tuple
 
@@ -145,7 +147,11 @@ class DetectionAlgorithm:
 
         # State
         self._current_pose: Optional[np.ndarray] = None
+        self._current_linvel: np.ndarray = np.array([0.0, 0.0, 0.0])
+        self._current_angvel: np.ndarray = np.array([0.0, 0.0, 0.0])
         self._current_mask: Optional[np.ndarray] = None
+        self._prev_pose: Optional[np.ndarray] = None
+        self._prev_pose_time: Optional[float] = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Inference resolution limits (separate for detect vs track)
@@ -453,6 +459,10 @@ class DetectionAlgorithm:
 
             self._current_pose = pose
             self._current_mask = best_mask  # keep at original resolution
+            self._current_linvel = np.zeros(3, dtype=np.float64)
+            self._current_angvel = np.zeros(3, dtype=np.float64)
+            self._prev_pose = pose.copy()
+            self._prev_pose_time = time.time()
 
             # Record inference completion
             self._record_inference(t0)
@@ -466,7 +476,7 @@ class DetectionAlgorithm:
             logger.error(f"First-frame detection failed: {e}", exc_info=True)
             return None
 
-    def track(self, frame: np.ndarray) -> Optional[np.ndarray]:
+    def track(self, frame: np.ndarray) -> tuple[Optional[np.ndarray], np.ndarray, np.ndarray]:
         """
         Track object in new frame using FoundationPose.track_one().
         Uses render_cad_depth to generate depth for tracking (matching test_demo_without_depth.py).
@@ -475,15 +485,15 @@ class DetectionAlgorithm:
             frame: RGB image (H, W, 3) uint8
 
         Returns:
-            4x4 pose matrix (object-to-camera), or None if tracking failed
+            4x4 pose matrix (object-to-camera), linear velocity (3,), angular velocity (3,), or None if tracking failed
         """
         if not self._initialized:
             logger.error("Detection algorithm not initialized")
-            return None
+            return None, np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0])
 
         if self._current_pose is None:
             logger.error("No initial pose. Run detect_first_frame() first.")
-            return None
+            return None, np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0])
 
         try:
             t0 = time.time()
@@ -513,6 +523,8 @@ class DetectionAlgorithm:
                 iteration=self.config.track_refine_iter
             )
 
+            now = time.time()
+            self._update_velocities(pose, now)
             self._current_pose = pose
             # Update mask from estimator's last mask
             if hasattr(self.estimator, 'mask_last') and self.estimator.mask_last is not None:  # type: ignore
@@ -521,17 +533,47 @@ class DetectionAlgorithm:
             # Record inference completion
             self._record_inference(t0)
 
-            return pose
+            return pose, self._current_linvel if self._current_linvel is not None else np.array([0.0, 0.0, 0.0]), self._current_angvel if self._current_angvel is not None else np.array([0.0, 0.0, 0.0])
 
         except Exception as e:
             logger.error(f"Tracking failed: {e}", exc_info=True)
-            return None
+            return None, np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 0.0])
+
+    def _update_velocities(self, new_pose: np.ndarray, now: float) -> None:
+        """Compute linear and angular velocity from consecutive poses."""
+        if self._prev_pose is None or self._prev_pose_time is None:
+            self._current_linvel = np.zeros(3, dtype=np.float64)
+            self._current_angvel = np.zeros(3, dtype=np.float64)
+            self._prev_pose = new_pose.copy()
+            self._prev_pose_time = now
+            return
+
+        dt = now - self._prev_pose_time
+        if dt < 1e-9:
+            return
+
+        # Linear velocity: d(translation) / dt
+        self._current_linvel = (new_pose[:3, 3] - self._prev_pose[:3, 3]) / dt
+
+        # Angular velocity from relative rotation
+        R_prev = self._prev_pose[:3, :3]
+        R_curr = new_pose[:3, :3]
+        R_rel = R_curr @ R_prev.T
+        rotvec = Rotation.from_matrix(R_rel).as_rotvec()
+        self._current_angvel = rotvec / dt
+
+        self._prev_pose = new_pose.copy()
+        self._prev_pose_time = now
 
     def reset(self):
         """Clear tracking state, reset to initial state"""
         logger.info("Resetting detection algorithm...")
         self._current_pose = None
         self._current_mask = None
+        self._current_linvel = np.array([0.0, 0.0, 0.0])
+        self._current_angvel = np.array([0.0, 0.0, 0.0])
+        self._prev_pose = None
+        self._prev_pose_time = None
         if self.estimator is not None:
             self.estimator.pose_last = None
             self.estimator.track_good = False
@@ -550,6 +592,16 @@ class DetectionAlgorithm:
     def current_mask(self) -> Optional[np.ndarray]:
         """Get current object mask"""
         return self._current_mask
+
+    @property
+    def current_linvel(self) -> np.ndarray:
+        """Get current linear velocity (3,) in m/s"""
+        return self._current_linvel
+
+    @property
+    def current_angvel(self) -> np.ndarray:
+        """Get current angular velocity (3,) in rad/s (rotation vector form)"""
+        return self._current_angvel
 
     @property
     def is_initialized(self) -> bool:

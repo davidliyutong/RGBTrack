@@ -299,7 +299,9 @@ class RGBTrackInferenceService:
         """Publish dummy data in the same format when idle."""
         t0 = time.time_ns()
         dummy_pose = np.eye(4, dtype=np.float64)
-        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=dummy_pose, t0=t0, valid=False)
+        dummy_linvel = np.array([0.0, 0.0, 0.0])
+        dummy_angvel = np.array([0.0, 0.0, 0.0])
+        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=dummy_pose, t0=t0, linvel=dummy_linvel, angvel=dummy_angvel, valid=False)
         self._publish_result(result=result, frame=frame)
 
     def _run_detecting(self, frame: np.ndarray, frame_ts: int) -> None:
@@ -324,7 +326,9 @@ class RGBTrackInferenceService:
 
         self._current_pose = pose
         self._current_mask = mask
-        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=pose, t0=t0)
+        self._current_linvel = self.detection.current_linvel
+        self._current_angvel = self.detection.current_angvel
+        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=pose, t0=t0, linvel=self._current_linvel, angvel=self._current_angvel)
         self._publish_result(result=result, frame=frame)
 
         with self._state_lock:
@@ -335,23 +339,27 @@ class RGBTrackInferenceService:
         if self.detection is None:
             return
         t0 = time.time_ns()
-        pose = self.detection.track(frame)
+        pose, linvel, angvel = self.detection.track(frame)
         if pose is None:
             return
 
         self._current_pose = pose
+        self._current_linvel = linvel
+        self._current_angvel = angvel
         self._current_mask = self.detection.current_mask
-        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=pose, t0=t0)
+        result = self._build_result(frame=frame, frame_ts=frame_ts, pose=pose, t0=t0, linvel=linvel, angvel=angvel)
         self._publish_result(result=result, frame=frame)
         self._frame_id += 1
 
-    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int, valid: bool=True) -> DetectionResult:
+    def _build_result(self, frame: np.ndarray, frame_ts: int, pose: np.ndarray, t0: int, linvel: np.ndarray, angvel: np.ndarray, valid: bool=True) -> DetectionResult:
         camera_fps = self.camera.camera.fps if self.camera is not None else 0.0
         inference_fps = self.detection.fps if self.detection is not None else 0.0
         return DetectionResult(
             timestamp=frame_ts,
             frame_id=self._frame_id,
             pose=pose,
+            linvel=linvel,
+            angvel=angvel,
             processing_time_ms=(time.time_ns() - t0) / 1_000_000.0,
             frame_shape=frame.shape,
             camera_intrinsics=np.array(self.config.calibration.K, dtype=np.float64),
