@@ -23,7 +23,7 @@ class DemoClient:
 
     def __init__(self, config: SystemConfig):
         self.config = config
-        self.subscriber = ZMQSubscriber(config.zmq)
+        self.subscriber = ZMQSubscriber(config.zmq.results_address, config.zmq.control_address)
         self.running = True
 
         self._arrival_timestamps: deque[float] = deque(maxlen=500)

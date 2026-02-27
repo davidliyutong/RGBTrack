@@ -27,7 +27,7 @@ class ViserProcess(mp.Process):
         logger.info("Viser process starting")
 
         try:
-            from .viser_webui import start_viser_interface
+            from .viser_ui import start_viser_interface
         except Exception as exc:
             logger.warning("Viser UI entry unavailable: %s", exc)
             while True:

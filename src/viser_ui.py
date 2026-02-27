@@ -39,7 +39,7 @@ class ViserInterface:
 
         self._viser = viser
         self.server = viser.ViserServer(host=config.viser.host, port=config.viser.port)
-        self.client = ZMQSubscriber(config.zmq)
+        self.client = ZMQSubscriber(config.zmq.results_address, config.zmq.control_address)
 
         self._update_thread: Optional[threading.Thread] = None
         self._latest_pose: Optional[np.ndarray] = None

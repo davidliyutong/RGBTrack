@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 
 import zmq
 
-from .config import ZMQConfig
 from .zmq_common import (
     CMD_DISABLE_FRAME_BUFFER,
     CMD_ENABLE_FRAME_BUFFER,
@@ -33,19 +32,20 @@ logger = logging.getLogger(__name__)
 class ZMQSubscriber:
     """Client with SUB for results and REQ for control commands."""
 
-    def __init__(self, config: ZMQConfig):
-        self.config = config
+    def __init__(self, result_address: str, control_address: str):
         self.context = zmq.Context()
+        self.result_address = result_address
+        self.control_address = control_address
 
         self.sub_socket = self.context.socket(zmq.SUB)
-        self.sub_socket.connect(config.results_address)
+        self.sub_socket.connect(self.result_address)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self.sub_socket.setsockopt(zmq.RCVHWM, 1)
         self.sub_socket.setsockopt(zmq.CONFLATE, 1)
         self.sub_socket.setsockopt(zmq.RCVTIMEO, 200)
 
         self.req_socket = self.context.socket(zmq.REQ)
-        self.req_socket.connect(config.control_address)
+        self.req_socket.connect(self.control_address)
         self.req_socket.setsockopt(zmq.RCVTIMEO, 1000)
         self.req_socket.setsockopt(zmq.LINGER, 0)
 
@@ -162,7 +162,7 @@ class ZMQSubscriber:
         except Exception:
             pass
         self.req_socket = self.context.socket(zmq.REQ)
-        self.req_socket.connect(self.config.control_address)
+        self.req_socket.connect(self.control_address)
         self.req_socket.setsockopt(zmq.RCVTIMEO, 1000)
         self.req_socket.setsockopt(zmq.LINGER, 0)
 
