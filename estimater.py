@@ -629,7 +629,7 @@ class FoundationPose:
         depth = torch.as_tensor(depth, device="cuda", dtype=torch.float)
         depth = erode_depth(depth, radius=2, device="cuda")
         depth = bilateral_filter_depth(depth, radius=2, device="cuda")
-    
+
 
         xyz_map = depth2xyzmap_batch(
             depth[None],

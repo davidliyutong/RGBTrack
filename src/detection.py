@@ -204,6 +204,7 @@ class DetectionAlgorithm:
             # Load mesh
             logger.info(f"Loading mesh from {self.config.mesh_path}")
             self.mesh = trimesh.load(self.config.mesh_path)
+            self.mesh.apply_scale(self.config.mesh_scale)  # TODO: fixed scale for testing
 
             # Initialize FoundationPose
             logger.info("Initializing FoundationPose...")
@@ -478,14 +479,14 @@ class DetectionAlgorithm:
             logger.error(f"First-frame detection failed: {e}", exc_info=True)
             return None
 
-    def track(self, frame: np.ndarray) -> tuple[Optional[np.ndarray], np.ndarray, np.ndarray]:
+    def track(self, frame: np.ndarray, frame_ts: int) -> tuple[Optional[np.ndarray], np.ndarray, np.ndarray]:
         """
         Track object in new frame using FoundationPose.track_one().
         Uses render_cad_depth to generate depth for tracking (matching test_demo_without_depth.py).
 
         Args:
             frame: RGB image (H, W, 3) uint8
-
+            frame_ts: frame timestamp in nanoseconds
         Returns:
             4x4 pose matrix (object-to-camera), linear velocity (3,), angular velocity (3,), or None if tracking failed
         """
@@ -503,10 +504,14 @@ class DetectionAlgorithm:
             K_orig = np.array(self.calibration_config.K, dtype=np.float64)
 
             # Optionally downscale for tracking (default 0 = full resolution)
-            frame_t, K_t, _, _ = self._resize_for_inference(
-                frame, K_orig,
-                max_shorter_side=self._track_max_shorter_side,
-            )
+            # FIXME: this has bugs when track_max_shorter_side is set (poses are wrong, mask is wrong). Suspect K is not being scaled correctly or consistently between depth rendering and tracking.
+            if self._track_max_shorter_side > 0:
+                frame_t, K_t, _, _ = self._resize_for_inference(
+                    frame, K_orig,
+                    max_shorter_side=self._track_max_shorter_side,
+                )
+            else:
+                frame_t, K_t = frame, K_orig.copy()
 
             # Render CAD depth from current pose (matching test_demo_without_depth.py line 113)
             depth = render_cad_depth(
@@ -525,8 +530,7 @@ class DetectionAlgorithm:
                 iteration=self.config.track_refine_iter
             )
 
-            now = time.time()
-            self._update_velocities(pose, now)
+            self._update_velocities(pose, frame_ts / 1e9)  # Convert nanoseconds to seconds
             self._current_pose = pose
             # Update mask from estimator's last mask
             if hasattr(self.estimator, 'mask_last') and self.estimator.mask_last is not None:  # type: ignore

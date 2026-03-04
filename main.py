@@ -344,7 +344,7 @@ class RGBTrackInferenceService:
         if self.detection is None:
             return
         t0 = time.time_ns()
-        pose, linvel, angvel = self.detection.track(frame)
+        pose, linvel, angvel = self.detection.track(frame, frame_ts)
         if pose is None:
             return
 

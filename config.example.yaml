@@ -164,6 +164,9 @@ detection:
   # Measurement noise: uncertainty in observations (higher = trust predictions more)
   kalman_measurement_noise: 0.05
 
+  # Scale factor for the loaded mesh model used in detection (for testing / debugging purposes)
+  mesh_scale: 1.0
+
 # ============================================================================
 # ZMQ Communication Configuration
 # ============================================================================

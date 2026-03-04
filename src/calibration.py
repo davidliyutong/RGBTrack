@@ -235,7 +235,7 @@ class CameraCalibrator:
                 f"Running AprilTag calibration with {len(self.all_marker_corners)} images...")
             # Perform calibration
             flags = 0
-            flags |= cv2.CALIB_RATIONAL_MODEL  # Use rational distortion model
+            # flags |= cv2.CALIB_RATIONAL_MODEL  # Use rational distortion model
 
             rms_error, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(  # type: ignore
                 self.all_object_points,
@@ -283,6 +283,7 @@ class CameraCalibrator:
 
         for i, img in enumerate(self.calibration_images):
             filename = output_dir / f"calib_{i:03d}.png"
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # Convert to BGR for saving
             cv2.imwrite(str(filename), img)
 
         logger.info(

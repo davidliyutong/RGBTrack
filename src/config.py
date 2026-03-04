@@ -128,6 +128,10 @@ class DetectionConfig(BaseModel):
     kalman_measurement_noise: float = Field(
         default=0.05, description="Kalman filter measurement noise")
 
+    mesh_scale: float = Field(
+        default=1.0, description="Scale factor for the loaded mesh model used in detection (for testing / debugging purposes)"
+    )
+
 
 class ZMQConfig(BaseModel):
     """ZeroMQ server configuration"""
