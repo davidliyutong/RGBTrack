@@ -19,6 +19,8 @@ CMD_DISABLE_FRAME_BUFFER: Final[str] = "disable_frame_buffer"
 CMD_SET_PROMPT: Final[str] = "set_prompt"
 CMD_SET_NMS_THRESHOLD: Final[str] = "set_nms_threshold"
 CMD_GET_STATUS: Final[str] = "get_status"
+CMD_START_RECORDING: Final[str] = "start_recording"
+CMD_STOP_RECORDING: Final[str] = "stop_recording"
 
 COMMAND_TYPES: FrozenSet[str] = frozenset(
 	{
@@ -31,6 +33,8 @@ COMMAND_TYPES: FrozenSet[str] = frozenset(
 		CMD_SET_PROMPT,
 		CMD_SET_NMS_THRESHOLD,
 		CMD_GET_STATUS,
+		CMD_START_RECORDING,
+		CMD_STOP_RECORDING,
 	}
 )
 
@@ -44,6 +48,7 @@ KEY_STATUS: Final[str] = "status"
 KEY_FRAME_BUFFER_ENABLED: Final[str] = "frame_buffer_enabled"
 KEY_PROMPT: Final[str] = "prompt"
 KEY_NMS_THRESHOLD: Final[str] = "nms_threshold"
+KEY_RECORDING: Final[str] = "recording"
 
 STATUS_IDLE: Final[str] = "IDLE"
 STATUS_DETECTING: Final[str] = "DETECTING"

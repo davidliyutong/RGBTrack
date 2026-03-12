@@ -18,6 +18,7 @@ from .zmq_common import (
     KEY_NMS_THRESHOLD,
     KEY_PAYLOAD,
     KEY_PROMPT,
+    KEY_RECORDING,
     KEY_STATUS,
 )
 from .zmq_subscriber import ZMQSubscriber
@@ -111,6 +112,7 @@ class ViserInterface:
             self.start_button = self.server.gui.add_button("Start Detection")
             self.pause_resume_button = self.server.gui.add_button("Pause")
             self.reset_button = self.server.gui.add_button("Reset")
+            self.record_button = self.server.gui.add_button("Start Recording")
             self.message_text = self.server.gui.add_text("Message", initial_value="", disabled=True)
 
         self.world_frame = self.server.scene.add_frame("/world", axes_length=0.2, axes_radius=0.004)
@@ -190,6 +192,18 @@ class ViserInterface:
                 response = self.client.disable_frame_buffer()
             self._apply_status_response(response)
 
+        @self.record_button.on_click
+        def _(_event):
+            if self.record_button.label == "Start Recording":
+                response = self.client.start_recording()
+                if response.get("success"):
+                    self.record_button.label = "Stop Recording"
+            else:
+                response = self.client.stop_recording()
+                if response.get("success"):
+                    self.record_button.label = "Start Recording"
+            self._apply_status_response(response)
+
     def start(self) -> None:
         self.running = True
         self.setup_ui()
@@ -255,6 +269,12 @@ class ViserInterface:
             frame_value = bool(frame_enabled)
             if bool(self.frame_toggle.value) != frame_value:
                 self.frame_toggle.value = frame_value
+        recording = response.get(KEY_RECORDING)
+        if recording is not None:
+            if bool(recording):
+                self.record_button.label = "Stop Recording"
+            else:
+                self.record_button.label = "Start Recording"
 
 
 def start_viser_interface(config: SystemConfig) -> None:

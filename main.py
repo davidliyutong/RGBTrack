@@ -26,11 +26,14 @@ from src.zmq_common import (
     CMD_SET_NMS_THRESHOLD,
     CMD_SET_PROMPT,
     CMD_START,
+    CMD_START_RECORDING,
+    CMD_STOP_RECORDING,
     KEY_COMMAND,
     KEY_MESSAGE,
     KEY_NMS_THRESHOLD,
     KEY_PAYLOAD,
     KEY_PROMPT,
+    KEY_RECORDING,
     KEY_SUCCESS,
     STATUS_DETECTING,
     STATUS_IDLE,
@@ -86,6 +89,14 @@ class RGBTrackInferenceService:
         self._use_viser = True
         self._preview_enabled = False
         self._preview_window_name = "RGBTrack Preview"
+
+        # Recording state
+        self._recording = False
+        self._recording_lock = threading.Lock()
+        self._recording_container = None   # av.OutputContainer
+        self._recording_stream = None      # av.VideoStream
+        self._recording_path: Optional[Path] = None
+        self._recording_frame_count = 0
 
         self.camera_intrinsics = np.array(self.config.calibration.K, dtype=np.float32)
         self.camera_distortion = np.array(self.config.calibration.dist_coef, dtype=np.float32)
@@ -220,6 +231,15 @@ class RGBTrackInferenceService:
 
             if self.config.camera.undistort:
                 frame_data = cv2.undistort(frame_data, self.camera_intrinsics, self.camera_distortion)
+
+            # Save frame if recording is active
+            with self._recording_lock:
+                if self._recording and self._recording_stream is not None:
+                    import av
+                    av_frame = av.VideoFrame.from_ndarray(frame_data, format="rgb24")
+                    for packet in self._recording_stream.encode(av_frame):
+                        self._recording_container.mux(packet)
+                    self._recording_frame_count += 1
 
             with self._state_lock:
                 state = self.state
@@ -422,7 +442,63 @@ class RGBTrackInferenceService:
             except Exception:
                 return {KEY_SUCCESS: False, KEY_MESSAGE: "invalid nms_threshold"}
 
+        if command == CMD_START_RECORDING:
+            ok, msg = self._handle_start_recording()
+            return {KEY_SUCCESS: ok, KEY_MESSAGE: msg, KEY_RECORDING: ok}
+
+        if command == CMD_STOP_RECORDING:
+            ok, msg = self._handle_stop_recording()
+            return {KEY_SUCCESS: ok, KEY_MESSAGE: msg, KEY_RECORDING: False}
+
         return {KEY_SUCCESS: False, KEY_MESSAGE: f"unknown command: {command}"}
+
+    def _handle_start_recording(self) -> tuple:
+        """Start recording undistorted camera frames to MP4."""
+        import av
+        with self._recording_lock:
+            if self._recording:
+                return False, "already recording"
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            rec_dir = Path("recordings")
+            rec_dir.mkdir(parents=True, exist_ok=True)
+            out_path = rec_dir / f"{timestamp}.mp4"
+
+            container = av.open(str(out_path), mode="w")
+            stream = container.add_stream("h264", rate=self.config.camera.fps)
+            stream.width = self.config.camera.width
+            stream.height = self.config.camera.height
+            stream.pix_fmt = "yuv420p"
+            stream.options = {"crf": "18", "preset": "fast"}
+
+            self._recording_container = container
+            self._recording_stream = stream
+            self._recording_path = out_path
+            self._recording_frame_count = 0
+            self._recording = True
+            logger.info("Started recording to %s", out_path)
+            return True, f"recording to {out_path}"
+
+    def _handle_stop_recording(self) -> tuple:
+        """Stop recording, flush and close MP4 file."""
+        with self._recording_lock:
+            if not self._recording:
+                return False, "not recording"
+            self._recording = False
+            count = self._recording_frame_count
+            out_path = self._recording_path
+            try:
+                # Flush remaining packets
+                for packet in self._recording_stream.encode():
+                    self._recording_container.mux(packet)
+                self._recording_container.close()
+            except Exception as exc:
+                logger.warning("Error closing recording container: %s", exc)
+            self._recording_container = None
+            self._recording_stream = None
+            self._recording_path = None
+            self._recording_frame_count = 0
+            logger.info("Stopped recording. %d frames saved to %s", count, out_path)
+            return True, f"stopped. {count} frames saved to {out_path}"
 
     def _handle_start_detection(self) -> bool:
         with self._state_lock:

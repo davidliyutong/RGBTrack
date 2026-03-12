@@ -203,7 +203,7 @@ class DetectionAlgorithm:
 
             # Load mesh
             logger.info(f"Loading mesh from {self.config.mesh_path}")
-            self.mesh = trimesh.load(self.config.mesh_path)
+            self.mesh = trimesh.load(self.config.mesh_path, force='mesh')
             self.mesh.apply_scale(self.config.mesh_scale)  # TODO: fixed scale for testing
 
             # Initialize FoundationPose
@@ -462,6 +462,17 @@ class DetectionAlgorithm:
 
             self._current_pose = pose
             self._current_mask = best_mask  # keep at original resolution
+
+            # Save mask to debug folder for inspection
+            try:
+                debug_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "debug")
+                os.makedirs(debug_dir, exist_ok=True)
+                mask_path = os.path.join(debug_dir, "detection_mask.png")
+                cv2.imwrite(mask_path, best_mask)
+                logger.info("Saved detection mask to %s", mask_path)
+            except Exception as _e:
+                logger.warning("Could not save debug mask: %s", _e)
+
             self._current_linvel = np.zeros(3, dtype=np.float64)
             self._current_angvel = np.zeros(3, dtype=np.float64)
             self._prev_pose = pose.copy()

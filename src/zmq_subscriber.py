@@ -19,6 +19,8 @@ from .zmq_common import (
     CMD_SET_NMS_THRESHOLD,
     CMD_SET_PROMPT,
     CMD_START,
+    CMD_START_RECORDING,
+    CMD_STOP_RECORDING,
     KEY_COMMAND,
     KEY_PAYLOAD,
     KEY_TIMESTAMP,
@@ -155,6 +157,12 @@ class ZMQSubscriber:
 
     def get_status(self) -> Dict[str, Any]:
         return self.send_command(CMD_GET_STATUS, timeout_ms=100)
+
+    def start_recording(self) -> Dict[str, Any]:
+        return self.send_command(CMD_START_RECORDING)
+
+    def stop_recording(self) -> Dict[str, Any]:
+        return self.send_command(CMD_STOP_RECORDING)
 
     def _reset_req_socket(self) -> None:
         try:

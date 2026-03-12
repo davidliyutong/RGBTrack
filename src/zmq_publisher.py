@@ -18,12 +18,15 @@ from .zmq_common import (
     CMD_DISABLE_FRAME_BUFFER,
     CMD_ENABLE_FRAME_BUFFER,
     CMD_GET_STATUS,
+    CMD_START_RECORDING,
+    CMD_STOP_RECORDING,
     KEY_COMMAND,
     KEY_FRAME_BUFFER_ENABLED,
     KEY_MESSAGE,
     KEY_NMS_THRESHOLD,
     KEY_PAYLOAD,
     KEY_PROMPT,
+    KEY_RECORDING,
     KEY_STATUS,
     KEY_SUCCESS,
     KEY_TIMESTAMP,
@@ -54,6 +57,7 @@ class ZMQPublisher:
         self._latest_payload: Optional[Dict[str, Any]] = None
         self._new_payload_event = threading.Event()
         self._frame_buffer_enabled = False
+        self._recording = False
         self._status = "IDLE"
         self._prompt = ""
         self._nms_threshold = 0.4
@@ -247,6 +251,11 @@ class ZMQPublisher:
         if self._command_handler is not None and command not in {CMD_ENABLE_FRAME_BUFFER, CMD_DISABLE_FRAME_BUFFER, CMD_GET_STATUS}:
             external_result = self._command_handler({KEY_COMMAND: command, KEY_PAYLOAD: payload})
 
+        # Update recording state after external handler processes it
+        if command in {CMD_START_RECORDING, CMD_STOP_RECORDING}:
+            with self._state_lock:
+                self._recording = external_result.get(KEY_RECORDING, self._recording)
+
         with self._state_lock:
             return {
                 KEY_TYPE: MSG_TYPE_STATUS,
@@ -255,6 +264,7 @@ class ZMQPublisher:
                 KEY_PROMPT: self._prompt,
                 KEY_NMS_THRESHOLD: self._nms_threshold,
                 KEY_FRAME_BUFFER_ENABLED: self._frame_buffer_enabled,
+                KEY_RECORDING: self._recording,
                 KEY_MESSAGE: external_result.get(KEY_MESSAGE, "ok"),
                 KEY_TIMESTAMP: time.time(),
             }
