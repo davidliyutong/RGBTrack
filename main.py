@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import signal
 import sys
@@ -9,7 +10,7 @@ import threading
 import time
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import cv2
@@ -65,16 +66,17 @@ class TrackingState(Enum):
 
 
 class RGBTrackInferenceService:
-    """RGBTrack inference service with camera, detection, ZMQ, and optional Viser."""
+    """RGBTrack inference service with camera, detection, publisher, and optional Viser."""
 
-    def __init__(self, config: SystemConfig):
+    def __init__(self, config: SystemConfig, backend: str = "zeromq"):
         self.config = config
+        self._backend = backend
         self.state = TrackingState.IDLE
         self._state_lock = threading.Lock()
 
         self.camera: Optional[CameraThread] = None
         self.detection: Optional[DetectionAlgorithm] = None
-        self.zmq_pub: Optional[ZMQPublisher] = None
+        self.publisher: Optional[Union[ZMQPublisher, Any]] = None
         self.viser_process: Optional[ViserProcess] = None
 
         self._running = False
@@ -126,15 +128,19 @@ class RGBTrackInferenceService:
                 return False
             logger.info("Detection algorithm initialized")
 
-            self.zmq_pub = ZMQPublisher(self.config.zmq)
-            self.zmq_pub.set_command_handler(self._handle_control_command)
-            self.zmq_pub.update_status(
+            if self._backend == "ros2":
+                from src.ros2_publisher import ROS2Publisher
+                self.publisher = ROS2Publisher(self.config.ros2)
+            else:
+                self.publisher = ZMQPublisher(self.config.zmq)
+            self.publisher.set_command_handler(self._handle_control_command)
+            self.publisher.update_status(
                 status=self._state_to_string(TrackingState.IDLE),
                 prompt=self.config.detection.prompt,
                 nms_threshold=self.config.detection.nms_threshold,
             )
-            self.zmq_pub.start()
-            logger.info("ZMQ service initialized")
+            self.publisher.start()
+            logger.info("Publisher service initialized (backend: %s)", self._backend)
 
             if self._use_viser:
                 self.viser_process = ViserProcess(self.config)
@@ -188,9 +194,9 @@ class RGBTrackInferenceService:
         if self._detection_thread is not None:
             self._detection_thread.join(timeout=2.0)
 
-        if self.zmq_pub is not None:
-            self.zmq_pub.stop()
-            self.zmq_pub = None
+        if self.publisher is not None:
+            self.publisher.stop()
+            self.publisher = None
 
         if self.viser_process is not None:
             self.viser_process.terminate()
@@ -395,12 +401,12 @@ class RGBTrackInferenceService:
         )
 
     def _publish_result(self, result: DetectionResult, frame: np.ndarray) -> None:
-        if self.zmq_pub is None:
+        if self.publisher is None:
             return
-        if self.zmq_pub.is_frame_buffer_enabled():
-            self.zmq_pub.publish_result(result=result, frame=frame)
+        if self.publisher.is_frame_buffer_enabled():
+            self.publisher.publish_result(result=result, frame=frame)
         else:
-            self.zmq_pub.publish_result(result=result, frame=None)
+            self.publisher.publish_result(result=result, frame=None)
 
     def _handle_control_command(self, command_msg: Dict[str, Any]) -> Dict[str, Any]:
         command = command_msg.get(KEY_COMMAND)
@@ -425,8 +431,8 @@ class RGBTrackInferenceService:
         if command == CMD_SET_PROMPT:
             prompt = payload.get(KEY_PROMPT, "")
             self.config.detection.prompt = str(prompt)
-            if self.zmq_pub is not None:
-                self.zmq_pub.update_status(prompt=self.config.detection.prompt)
+            if self.publisher is not None:
+                self.publisher.update_status(prompt=self.config.detection.prompt)
             return {KEY_SUCCESS: True, KEY_MESSAGE: "prompt updated"}
 
         if command == CMD_SET_NMS_THRESHOLD:
@@ -436,17 +442,21 @@ class RGBTrackInferenceService:
                     raise ValueError("nms_threshold is required")
                 nms = float(value)
                 self.config.detection.nms_threshold = nms
-                if self.zmq_pub is not None:
-                    self.zmq_pub.update_status(nms_threshold=nms)
+                if self.publisher is not None:
+                    self.publisher.update_status(nms_threshold=nms)
                 return {KEY_SUCCESS: True, KEY_MESSAGE: "nms updated"}
             except Exception:
                 return {KEY_SUCCESS: False, KEY_MESSAGE: "invalid nms_threshold"}
 
         if command == CMD_START_RECORDING:
+            if self._backend != "zeromq":
+                return {KEY_SUCCESS: False, KEY_MESSAGE: "recording not supported in ros2 backend; use ros2 bag record"}
             ok, msg = self._handle_start_recording()
             return {KEY_SUCCESS: ok, KEY_MESSAGE: msg, KEY_RECORDING: ok}
 
         if command == CMD_STOP_RECORDING:
+            if self._backend != "zeromq":
+                return {KEY_SUCCESS: False, KEY_MESSAGE: "recording not supported in ros2 backend; use ros2 bag record"}
             ok, msg = self._handle_stop_recording()
             return {KEY_SUCCESS: ok, KEY_MESSAGE: msg, KEY_RECORDING: False}
 
@@ -539,11 +549,11 @@ class RGBTrackInferenceService:
             return False
 
     def _update_pub_status(self) -> None:
-        if self.zmq_pub is None:
+        if self.publisher is None:
             return
         with self._state_lock:
             status = self._state_to_string(self.state)
-        self.zmq_pub.update_status(status=status)
+        self.publisher.update_status(status=status)
 
     @staticmethod
     def _state_to_string(state: TrackingState) -> str:
@@ -567,13 +577,27 @@ class RGBTrackInferenceService:
 
 def main() -> None:
     """Main entrypoint."""
-    config_path = Path("config.yaml")
+    parser = argparse.ArgumentParser(description="RGBTrack inference service")
+    parser.add_argument(
+        "--backend",
+        choices=["zeromq", "ros2"],
+        default="zeromq",
+        help="Communication backend (default: zeromq)",
+    )
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to config YAML file (default: config.yaml)",
+    )
+    args = parser.parse_args()
+
+    config_path = Path(args.config)
     if not config_path.exists():
         logger.error("Configuration file not found: %s", config_path)
         sys.exit(1)
 
     config = SystemConfig.from_yaml(config_path)
-    service = RGBTrackInferenceService(config)
+    service = RGBTrackInferenceService(config, backend=args.backend)
     service.start()
 
 

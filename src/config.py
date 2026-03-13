@@ -177,6 +177,21 @@ class ZMQConfig(BaseModel):
         return max(0, self.publish_interval_ms) / 1000.0
 
 
+class ROS2Config(BaseModel):
+    """ROS2 publisher configuration"""
+    node_name: str = "rgbtrack"
+    namespace: str = ""
+
+    # 0 means publish as fast as new results arrive
+    # >0 means fixed interval publish (repeat latest payload when needed)
+    publish_interval_ms: int = 0
+
+    @property
+    def publish_interval_sec(self) -> float:
+        """Get publish interval in seconds."""
+        return max(0, self.publish_interval_ms) / 1000.0
+
+
 class ViserConfig(BaseModel):
     """Viser 3D visualization configuration"""
     host: str = "0.0.0.0"
@@ -199,6 +214,7 @@ class SystemConfig(BaseModel):
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     zmq: ZMQConfig = Field(default_factory=ZMQConfig)
+    ros2: ROS2Config = Field(default_factory=ROS2Config)
     viser: ViserConfig = Field(default_factory=ViserConfig)
     calibration_ui: CalibrationUIConfig = Field(
         default_factory=CalibrationUIConfig
